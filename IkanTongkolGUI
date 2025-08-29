@@ -1,0 +1,209 @@
+--============================================================--
+--  📦 Raylite UI Library
+--  Dibuat mirip Rayfield, ringan, responsive, dan animasi halus
+--============================================================--
+
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local Raylite = {}
+Raylite.__index = Raylite
+
+-- Default tween info
+local function tween(object, properties, duration)
+    TweenService:Create(object, TweenInfo.new(duration or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), properties):Play()
+end
+
+-- Fungsi utama buat Window
+function Raylite:CreateWindow(config)
+    local self = setmetatable({}, Raylite)
+
+    -- ScreenGui
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "RayliteUI"
+    gui.Parent = game:GetService("CoreGui")
+
+    -- Drag function
+    local dragging, dragInput, dragStart, startPos
+    local function dragify(frame)
+        frame.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = frame.Position
+
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end)
+
+        frame.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                dragInput = input
+            end
+        end)
+
+        UserInputService.InputChanged:Connect(function(input)
+            if input == dragInput and dragging then
+                local delta = input.Position - dragStart
+                frame.Position = UDim2.new(
+                    startPos.X.Scale,
+                    startPos.X.Offset + delta.X,
+                    startPos.Y.Scale,
+                    startPos.Y.Offset + delta.Y
+                )
+            end
+        end)
+    end
+
+    -- Window utama
+    local window = Instance.new("Frame")
+    window.Name = "Window"
+    window.Size = UDim2.new(0, 350, 0, 300)
+    window.Position = UDim2.new(0.3, 0, 0.3, 0)
+    window.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    window.BorderSizePixel = 0
+    window.Parent = gui
+
+    -- UI Corner
+    Instance.new("UICorner", window).CornerRadius = UDim.new(0, 12)
+
+    -- Title bar
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -40, 0, 30)
+    title.Position = UDim2.new(0, 10, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Text = config.Name or "Raylite Window"
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 16
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = window
+
+    -- Close button
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 0)
+    closeBtn.Text = "X"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+    closeBtn.BackgroundTransparency = 1
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.Parent = window
+
+    closeBtn.MouseButton1Click:Connect(function()
+        tween(window, {Size = UDim2.new(0, 350, 0, 0)}, 0.25)
+        task.wait(0.25)
+        gui:Destroy()
+    end)
+
+    dragify(window)
+
+    -- Content container
+    local content = Instance.new("Frame")
+    content.Name = "Content"
+    content.BackgroundTransparency = 1
+    content.Size = UDim2.new(1, -20, 1, -40)
+    content.Position = UDim2.new(0, 10, 0, 35)
+    content.Parent = window
+
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Parent = content
+    listLayout.Padding = UDim.new(0, 6)
+
+    self.Window = window
+    self.Content = content
+
+    return self
+end
+
+-- Section
+function Raylite:CreateSection(name)
+    local sec = Instance.new("Frame")
+    sec.Size = UDim2.new(1, 0, 0, 30)
+    sec.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    sec.Parent = self.Content
+
+    Instance.new("UICorner", sec).CornerRadius = UDim.new(0, 10)
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 1, 0)
+    label.Position = UDim2.new(0, 5, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = sec
+
+    return sec
+end
+
+-- Button
+function Raylite:CreateButton(section, text, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 30)
+    btn.Text = text
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.Parent = section
+
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+    btn.MouseButton1Click:Connect(function()
+        tween(btn, {BackgroundColor3 = Color3.fromRGB(70, 70, 70)}, 0.15)
+        task.wait(0.15)
+        tween(btn, {BackgroundColor3 = Color3.fromRGB(45, 45, 45)}, 0.15)
+        pcall(callback)
+    end)
+end
+
+-- Toggle
+function Raylite:CreateToggle(section, text, default, callback)
+    local toggle = Instance.new("TextButton")
+    toggle.Size = UDim2.new(1, 0, 0, 30)
+    toggle.Text = text .. " : " .. (default and "ON" or "OFF")
+    toggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggle.Font = Enum.Font.Gotham
+    toggle.TextSize = 14
+    toggle.Parent = section
+
+    Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 8)
+
+    local state = default
+    toggle.MouseButton1Click:Connect(function()
+        state = not state
+        toggle.Text = text .. " : " .. (state and "ON" or "OFF")
+        pcall(callback, state)
+    end)
+end
+
+-- Notification
+function Raylite:Notify(title, message)
+    local notif = Instance.new("TextLabel")
+    notif.Size = UDim2.new(0, 250, 0, 40)
+    notif.Position = UDim2.new(1, -270, 1, -60)
+    notif.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    notif.TextColor3 = Color3.fromRGB(255, 255, 255)
+    notif.Text = title .. " - " .. message
+    notif.Font = Enum.Font.Gotham
+    notif.TextSize = 14
+    notif.Parent = self.Window
+
+    Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 10)
+
+    tween(notif, {Position = UDim2.new(1, -270, 1, -120)}, 0.3)
+    task.wait(2.5)
+    tween(notif, {Position = UDim2.new(1, -270, 1, 0)}, 0.3)
+    task.wait(0.3)
+    notif:Destroy()
+end
+
+return Raylite
