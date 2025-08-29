@@ -1,5 +1,12 @@
--- IkanTongkol.lua
--- Full-featured lightweight UI library (Rayfield-like API) with Minimize + Logo
+-- IkanTongkolGUI.lua (Full-featured)
+-- Fitur:
+-- - Window utama (drag), Close, Minimize + Logo ikan (drag + click restore)
+-- - Sidebar + Tab + Section
+-- - Komponen: Button, Toggle, Slider, Dropdown (inline), Textbox (Input), Keybind
+-- - Save/Load via Flag (per pemain)
+-- - Notification
+-- - Popup terpisah: CreatePopupDropdown, CreatePopupInput, CreatePopupList
+-- - Popup draggable, ikut pindah bareng window, bisa close dengan klik area kosong GUI (optional)
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -11,15 +18,13 @@ local LocalPlayer = Players.LocalPlayer
 local IkanTongkol = {}
 IkanTongkol.__index = IkanTongkol
 
--- ----------------------
+-- ======================================================
 -- Utilities
--- ----------------------
+-- ======================================================
 local function new(class, props, parent)
     local inst = Instance.new(class)
     if props then
-        for k, v in pairs(props) do
-            inst[k] = v
-        end
+        for k, v in pairs(props) do inst[k] = v end
     end
     if parent then inst.Parent = parent end
     return inst
@@ -36,6 +41,7 @@ end
 
 local function clamp(v, a, b) return math.max(a, math.min(b, v)) end
 
+-- Persistent store (per player)
 local function getStoreFolder()
     local pg = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
     local folder = pg:FindFirstChild("IkanTongkolStore")
@@ -66,9 +72,9 @@ local function loadFlag(flag)
     if ok then return val else return nil end
 end
 
--- ----------------------
+-- ======================================================
 -- Window
--- ----------------------
+-- ======================================================
 function IkanTongkol:CreateWindow(cfg)
     cfg = cfg or {}
     local self = setmetatable({}, IkanTongkol)
@@ -79,31 +85,32 @@ function IkanTongkol:CreateWindow(cfg)
         ZIndexBehavior = Enum.ZIndexBehavior.Global
     }, LocalPlayer:WaitForChild("PlayerGui"))
 
+    -- Main container (sedikit lebih besar, tapi gak kebesaran)
     local main = new("Frame", {
         Name = "Main",
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new(0.5, 0, 0.5, 0),
-        Size = cfg.Size or UDim2.new(0.36, 0, 0.56, 0),
+        Size = cfg.Size or UDim2.new(0.42, 0, 0.62, 0),
         BackgroundColor3 = cfg.BackgroundColor or Color3.fromRGB(28, 28, 30),
         BorderSizePixel = 0,
     }, gui)
-    new("UICorner", { CornerRadius = UDim.new(0,12) }, main)
+    new("UICorner", { CornerRadius = UDim.new(0, 12) }, main)
     new("UIStroke", { Color = Color3.fromRGB(50,50,56), Thickness = 1 }, main)
 
     -- Topbar
     local top = new("Frame", {
         Name = "Topbar",
-        Size = UDim2.new(1,0,0,44),
+        Size = UDim2.new(1, 0, 0, 44),
         BackgroundTransparency = 0,
         BackgroundColor3 = Color3.fromRGB(34,34,36),
     }, main)
-    new("UICorner", { CornerRadius = UDim.new(0,12) }, top)
+    new("UICorner", { CornerRadius = UDim.new(0, 12) }, top)
 
     local title = new("TextLabel", {
         Name = "Title",
         BackgroundTransparency = 1,
-        Position = UDim2.new(0,12,0,8),
-        Size = UDim2.new(1,-80,0,28),
+        Position = UDim2.new(0, 12, 0, 8),
+        Size = UDim2.new(1, -120, 0, 28),
         Text = cfg.Title or (cfg.Name or "Ikan Tongkol"),
         TextColor3 = Color3.fromRGB(235,235,240),
         Font = Enum.Font.GothamBold,
@@ -111,12 +118,12 @@ function IkanTongkol:CreateWindow(cfg)
         TextXAlignment = Enum.TextXAlignment.Left,
     }, top)
 
-    -- Tombol Close
+    -- Tombol Close & Minimize
     local closeBtn = new("TextButton", {
         Name = "Close",
-        Size = UDim2.new(0,36,0,28),
-        Position = UDim2.new(1,-46,0,8),
         BackgroundTransparency = 0.6,
+        Size = UDim2.new(0, 36, 0, 28),
+        Position = UDim2.new(1, -46, 0, 8),
         Text = "✕",
         Font = Enum.Font.GothamBold,
         TextSize = 16,
@@ -125,154 +132,883 @@ function IkanTongkol:CreateWindow(cfg)
     }, top)
     new("UICorner", { CornerRadius = UDim.new(0,8) }, closeBtn)
 
-    -- Tombol Minimize
-    local minimizeBtn = new("TextButton", {
+    local minBtn = new("TextButton", {
         Name = "Minimize",
-        Size = UDim2.new(0,36,0,28),
-        Position = UDim2.new(1,-90,0,8), -- di kiri close
-        BackgroundTransparency = 0.3,
-        Text = "─",
+        BackgroundTransparency = 0.6,
+        Size = UDim2.new(0, 36, 0, 28),
+        Position = UDim2.new(1, -92, 0, 8),
+        Text = "-",
         Font = Enum.Font.GothamBold,
         TextSize = 16,
-        TextColor3 = Color3.fromRGB(255,255,255),
+        TextColor3 = Color3.fromRGB(200,200,200),
         AutoButtonColor = false,
     }, top)
-    new("UICorner", { CornerRadius = UDim.new(0,8) }, minimizeBtn)
+    new("UICorner", { CornerRadius = UDim.new(0,8) }, minBtn)
 
-    -- Logo ikan (ImageLabel)
-    local logoBtn = new("ImageButton", {
+    -- Logo ikan (visible saat minimize). Pakai ImageButton biar bisa di-klik.
+    local logo = new("ImageButton", {
         Name = "Logo",
-        Size = UDim2.new(0,48,0,48),
-        Position = UDim2.new(0,12,0,12),
+        Size = UDim2.new(0, 42, 0, 42),
+        Position = UDim2.new(0, 18, 0, 18),
         BackgroundTransparency = 1,
-        Image = "rbxassetid://12882155276", -- contoh logo ikan
+        Image = cfg.LogoImage or "rbxassetid://13321241755", -- ganti id jika perlu
         Visible = false,
-        ZIndex = 10
+        AutoButtonColor = true,
     }, gui)
-    logoBtn.Active = true
-    logoBtn.Draggable = true
-
-    -- Tombol Close animasi
-    closeBtn.MouseEnter:Connect(function() tween(closeBtn, {BackgroundTransparency = 0.2},0.16) end)
-    closeBtn.MouseLeave:Connect(function() tween(closeBtn, {BackgroundTransparency = 0.6},0.16) end)
-    closeBtn.MouseButton1Click:Connect(function()
-        tween(main, {Size = UDim2.new(0,0,0,0)},0.22)
-        task.delay(0.22,function() gui:Destroy() end)
-    end)
-
-    -- Tombol Minimize animasi
-    local mainPos = main.Position
-    minimizeBtn.MouseEnter:Connect(function() tween(minimizeBtn,{BackgroundTransparency=0.1},0.16) end)
-    minimizeBtn.MouseLeave:Connect(function() tween(minimizeBtn,{BackgroundTransparency=0.3},0.16) end)
-    minimizeBtn.MouseButton1Click:Connect(function()
-        tween(main,{Position=UDim2.new(0.5,0,-1,0)},0.22)
-        logoBtn.Visible = true
-    end)
-
-    -- Restore dari logo
-    logoBtn.InputBegan:Connect(function(input)
-        if input.UserInputType==Enum.UserInputType.MouseButton1 then
-            tween(main,{Position=mainPos},0.22)
-            logoBtn.Visible=false
-        end
-    end)
+    logo.Active = true
+    logo.Selectable = true
 
     -- Sidebar + Content area
     local sidebar = new("Frame", {
         Name = "Sidebar",
-        Position = UDim2.new(0,0,0,44),
-        Size = UDim2.new(0,160,1,-44),
+        Position = UDim2.new(0, 0, 0, 44),
+        Size = UDim2.new(0, 160, 1, -44),
         BackgroundColor3 = Color3.fromRGB(30,30,32),
     }, main)
-    new("UICorner", { CornerRadius = UDim.new(0,0) }, sidebar)
-
-    local tabsHolder = new("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, Padding = UDim.new(0,8) }, sidebar)
+    new("UIListLayout", { FillDirection = Enum.FillDirection.Vertical, Padding = UDim.new(0,8) }, sidebar)
     new("UIPadding", { PaddingTop = UDim.new(0,8), PaddingLeft = UDim.new(0,8), PaddingRight = UDim.new(0,8) }, sidebar)
 
     local content = new("Frame", {
         Name = "Content",
-        Position = UDim2.new(0,160,0,44),
-        Size = UDim2.new(1,-160,1,-44),
+        Position = UDim2.new(0, 160, 0, 44),
+        Size = UDim2.new(1, -160, 1, -44),
         BackgroundColor3 = Color3.fromRGB(26,26,28),
     }, main)
-    new("UICorner", { CornerRadius = UDim.new(0,0) }, content)
+    new("UICorner", { CornerRadius = UDim.new(0, 0) }, content)
+    local pages = new("Folder", { Name = "Pages" }, content)
 
-    local pages = new("Folder", {Name="Pages"}, content)
+    -- Notif & Popup containers
+    local notifFolder = new("Folder", { Name = "Notifications" }, main)
+    local popupsFolder = new("Folder", { Name = "Popups" }, main)
 
-    -- Drag main window
+    -- Overlay untuk klik di area kosong menutup popup (di atas konten, di bawah popup)
+    local overlay = new("TextButton", {
+        Name = "Overlay",
+        Text = "",
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 1, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        Visible = false,
+        AutoButtonColor = false,
+        ZIndex = 50,
+    }, main)
+
+    -- Drag Main (via topbar)
     do
         local dragging, dragStart, startPos
         top.InputBegan:Connect(function(input)
-            if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-                dragging=true
-                dragStart=input.Position
-                startPos=main.Position
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = main.Position
                 input.Changed:Connect(function()
-                    if input.UserInputState==Enum.UserInputState.End then dragging=false end
+                    if input.UserInputState == Enum.UserInputState.End then dragging = false end
                 end)
             end
         end)
         UserInputService.InputChanged:Connect(function(input)
-            if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                 local delta = input.Position - dragStart
                 main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
             end
         end)
     end
 
-    -- Window object
+    -- Drag Logo
+    do
+        local dragging, dragStart, startPos
+        logo.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = logo.Position
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then dragging = false end
+                end)
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - dragStart
+                logo.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
+        end)
+    end
+
+    -- Tombol Close/Minimize/Logo
+    closeBtn.MouseEnter:Connect(function() tween(closeBtn, {BackgroundTransparency = 0.2}, 0.16) end)
+    closeBtn.MouseLeave:Connect(function() tween(closeBtn, {BackgroundTransparency = 0.6}, 0.16) end)
+    closeBtn.MouseButton1Click:Connect(function()
+        tween(main, {Size = UDim2.new(0,0,0,0)}, 0.22)
+        task.delay(0.22, function() gui:Destroy() end)
+    end)
+
+    minBtn.MouseEnter:Connect(function() tween(minBtn, {BackgroundTransparency = 0.2}, 0.16) end)
+    minBtn.MouseLeave:Connect(function() tween(minBtn, {BackgroundTransparency = 0.6}, 0.16) end)
+    minBtn.MouseButton1Click:Connect(function()
+        main.Visible = false
+        logo.Visible = true
+    end)
+
+    logo.MouseButton1Click:Connect(function()
+        logo.Visible = false
+        main.Visible = true
+    end)
+
+    -- Objek Window
     self._gui = gui
     self._main = main
+    self._top = top
     self._sidebar = sidebar
     self._content = content
     self._pages = pages
     self._tabs = {}
     self._activeTab = nil
-    self._notifFolder = new("Folder", {Name="Notifications"}, main)
+    self._notifFolder = notifFolder
+    self._popupsFolder = popupsFolder
+    self._overlay = overlay
+    self._logo = logo
 
-    -- Public methods: CreateTab, Notify, etc (sama seperti sebelumnya)
+    -- ==================================================
+    -- Public: Notifications
+    -- ==================================================
+    function self:Notify(titleText, bodyText, duration)
+        duration = duration or 2.4
+        local note = new("Frame", {
+            Name = "Note",
+            Size = UDim2.new(0, 320, 0, 52),
+            Position = UDim2.new(0.5, -160, 0, -60),
+            BackgroundColor3 = Color3.fromRGB(36,36,38),
+            ZIndex = 100,
+            Parent = self._main
+        })
+        new("UICorner", {CornerRadius = UDim.new(0,8)}, note)
+        new("UIStroke", {Color = Color3.fromRGB(60,60,64), Thickness = 1}, note)
+        new("TextLabel", {
+            Text = titleText or "Info",
+            BackgroundTransparency = 1,
+            TextColor3 = Color3.fromRGB(235,235,240),
+            Font = Enum.Font.GothamBold,
+            TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Size = UDim2.new(1,-14,0,22),
+            Position = UDim2.new(0, 10, 0, 4),
+            ZIndex = 101,
+            Parent = note
+        })
+        new("TextLabel", {
+            Text = bodyText or "",
+            BackgroundTransparency = 1,
+            TextColor3 = Color3.fromRGB(200,200,205),
+            Font = Enum.Font.Gotham,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Size = UDim2.new(1,-14,0,20),
+            Position = UDim2.new(0, 10, 0, 24),
+            ZIndex = 101,
+            Parent = note
+        })
+        tween(note, {Position = UDim2.new(0.5, -160, 0, 12)}, 0.22)
+        task.delay(duration, function()
+            tween(note, {Position = UDim2.new(0.5, -160, 0, -60), BackgroundTransparency = 1}, 0.22)
+            task.delay(0.22, function() if note and note.Parent then note:Destroy() end end)
+        end)
+    end
+
+    -- ==================================================
+    -- Internal: Popup Factory (basis)
+    -- ==================================================
+    local function createPopupBase(opts)
+        opts = opts or {}
+        local popupSize = opts.Size or UDim2.new(0, 300, 0, 220)
+        local closeOnBlank = (opts.CloseOnClickOutside ~= false) -- default true
+        local titleText = opts.Title or "Popup"
+
+        -- overlay on
+        self._overlay.Visible = true
+        self._overlay.ZIndex = 50
+
+        local frame = new("Frame", {
+            Name = "Popup",
+            Size = popupSize,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            BackgroundColor3 = Color3.fromRGB(32,32,34),
+            ZIndex = 60,
+            Parent = self._popupsFolder
+        })
+        new("UICorner", {CornerRadius = UDim.new(0, 10)}, frame)
+        new("UIStroke", {Color = Color3.fromRGB(70,70,76), Thickness = 1}, frame)
+
+        local topbar = new("Frame", {
+            Name = "Topbar",
+            Size = UDim2.new(1, 0, 0, 34),
+            BackgroundColor3 = Color3.fromRGB(38,38,40),
+            ZIndex = 61,
+            Parent = frame
+        })
+        new("UICorner", {CornerRadius = UDim.new(0, 10)}, topbar)
+
+        local title = new("TextLabel", {
+            BackgroundTransparency = 1,
+            Text = titleText,
+            TextColor3 = Color3.fromRGB(235,235,240),
+            Font = Enum.Font.GothamBold,
+            TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Size = UDim2.new(1, -80, 1, 0),
+            Position = UDim2.new(0, 10, 0, 0),
+            ZIndex = 62,
+            Parent = topbar
+        })
+
+        local xbtn = new("TextButton", {
+            Text = "✕",
+            BackgroundTransparency = 0.6,
+            TextColor3 = Color3.fromRGB(240,80,80),
+            Font = Enum.Font.GothamBold,
+            TextSize = 16,
+            AutoButtonColor = false,
+            Size = UDim2.new(0, 32, 0, 24),
+            Position = UDim2.new(1, -40, 0.5, -12),
+            ZIndex = 63,
+            Parent = topbar
+        })
+        new("UICorner", {CornerRadius = UDim.new(0, 6)}, xbtn)
+
+        local body = new("Frame", {
+            Name = "Body",
+            Size = UDim2.new(1, -16, 1, -46),
+            Position = UDim2.new(0, 8, 0, 38),
+            BackgroundTransparency = 1,
+            ZIndex = 61,
+            Parent = frame
+        })
+
+        -- Drag popup via topbar
+        do
+            local dragging, dragStart, startPos
+            topbar.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = true
+                    dragStart = input.Position
+                    startPos = frame.Position
+                    input.Changed:Connect(function()
+                        if input.UserInputState == Enum.UserInputState.End then dragging = false end
+                    end)
+                end
+            end)
+            UserInputService.InputChanged:Connect(function(input)
+                if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                    local delta = input.Position - dragStart
+                    frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                end
+            end)
+        end
+
+        -- close helpers
+        local function closePopup()
+            if frame and frame.Parent then frame:Destroy() end
+            -- jika tidak ada popup lain, matikan overlay
+            if #self._popupsFolder:GetChildren() == 0 then
+                self._overlay.Visible = false
+            end
+        end
+
+        xbtn.MouseEnter:Connect(function() tween(xbtn, {BackgroundTransparency = 0.2}, 0.12) end)
+        xbtn.MouseLeave:Connect(function() tween(xbtn, {BackgroundTransparency = 0.6}, 0.12) end)
+        xbtn.MouseButton1Click:Connect(closePopup)
+
+        if closeOnBlank then
+            -- klik area kosong (overlay) => close popup ini (hanya popup paling atas)
+            local function overlayClick()
+                -- pastikan ini popup paling atas
+                local kids = self._popupsFolder:GetChildren()
+                if kids[#kids] == frame then
+                    closePopup()
+                end
+            end
+            self._overlay.MouseButton1Click:Connect(overlayClick)
+        end
+
+        local api = {
+            Frame = frame,
+            Body = body,
+            Close = closePopup
+        }
+        return api
+    end
+
+    -- ==================================================
+    -- Public: Popup Variants
+    -- ==================================================
+    function self:CreatePopupDropdown(opts)
+        opts = opts or {}
+        local options = opts.Options or {}
+        local default = opts.Default or options[1]
+        local cb = opts.Callback
+
+        local popup = createPopupBase({
+            Title = opts.Title or (opts.Name or "Select Option"),
+            Size = opts.Size or UDim2.new(0, 280, 0, 260),
+            CloseOnClickOutside = (opts.CloseOnClickOutside ~= false)
+        })
+
+        local container = popup.Body
+        local list = new("UIListLayout", {Padding = UDim.new(0, 6)}, container)
+        new("UIPadding", {PaddingTop = UDim.new(0, 6), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6)}, container)
+
+        -- Optional: current label
+        local info = new("TextLabel", {
+            Text = "Current: " .. (tostring(default) or "-"),
+            BackgroundTransparency = 1,
+            TextColor3 = Color3.fromRGB(225,225,230),
+            Font = Enum.Font.Gotham,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Size = UDim2.new(1, -8, 0, 20),
+        }, container)
+
+        for _, choice in ipairs(options) do
+            local it = new("TextButton", {
+                Text = tostring(choice),
+                Size = UDim2.new(1, 0, 0, 28),
+                BackgroundColor3 = Color3.fromRGB(46,46,48),
+                TextColor3 = Color3.fromRGB(235,235,240),
+                Font = Enum.Font.Gotham,
+                TextSize = 13,
+                AutoButtonColor = false,
+                ZIndex = 61,
+                Parent = container
+            })
+            new("UICorner", {CornerRadius = UDim.new(0, 8)}, it)
+            it.MouseEnter:Connect(function() tween(it, {BackgroundColor3 = Color3.fromRGB(62,62,64)}, 0.1) end)
+            it.MouseLeave:Connect(function() tween(it, {BackgroundColor3 = Color3.fromRGB(46,46,48)}, 0.1) end)
+            it.MouseButton1Click:Connect(function()
+                info.Text = "Current: " .. tostring(choice)
+                if cb then pcall(cb, choice) end
+                if opts.AutoClose ~= false then popup.Close() end
+            end)
+        end
+
+        return popup
+    end
+
+    function self:CreatePopupInput(opts)
+        opts = opts or {}
+        local placeholder = opts.Placeholder or ""
+        local defaultText = opts.DefaultText or ""
+        local btnText = opts.ConfirmText or "Confirm"
+        local cb = opts.Callback or opts.OnConfirm
+
+        local popup = createPopupBase({
+            Title = opts.Title or (opts.Name or "Input"),
+            Size = opts.Size or UDim2.new(0, 300, 0, 160),
+            CloseOnClickOutside = (opts.CloseOnClickOutside ~= false)
+        })
+
+        local body = popup.Body
+
+        local label = new("TextLabel", {
+            Text = opts.Label or "Please enter value:",
+            BackgroundTransparency = 1,
+            TextColor3 = Color3.fromRGB(225,225,230),
+            Font = Enum.Font.Gotham,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Size = UDim2.new(1, 0, 0, 20)
+        }, body)
+
+        local box = new("TextBox", {
+            Text = defaultText,
+            PlaceholderText = placeholder,
+            ClearTextOnFocus = false,
+            Size = UDim2.new(1, 0, 0, 28),
+            Position = UDim2.new(0, 0, 0, 26),
+            BackgroundColor3 = Color3.fromRGB(46,46,48),
+            TextColor3 = Color3.fromRGB(235,235,240),
+            Font = Enum.Font.Gotham,
+            TextSize = 14,
+        }, body)
+        new("UICorner", {CornerRadius = UDim.new(0, 8)}, box)
+
+        local confirm = new("TextButton", {
+            Text = btnText,
+            Size = UDim2.new(1, 0, 0, 30),
+            Position = UDim2.new(0, 0, 0, 64),
+            BackgroundColor3 = Color3.fromRGB(0,170,255),
+            TextColor3 = Color3.fromRGB(255,255,255),
+            Font = Enum.Font.GothamBold,
+            TextSize = 14,
+            AutoButtonColor = false,
+        }, body)
+        new("UICorner", {CornerRadius = UDim.new(0, 8)}, confirm)
+        confirm.MouseEnter:Connect(function() tween(confirm, {BackgroundColor3 = Color3.fromRGB(0,150,230)}, 0.12) end)
+        confirm.MouseLeave:Connect(function() tween(confirm, {BackgroundColor3 = Color3.fromRGB(0,170,255)}, 0.12) end)
+        confirm.MouseButton1Click:Connect(function()
+            if cb then pcall(cb, box.Text) end
+            if opts.AutoClose ~= false then popup.Close() end
+        end)
+
+        box.FocusLost:Connect(function(enter)
+            if enter then
+                if cb then pcall(cb, box.Text) end
+                if opts.AutoClose ~= false then popup.Close() end
+            end
+        end)
+
+        return popup
+    end
+
+    function self:CreatePopupList(opts)
+        opts = opts or {}
+        local items = opts.Items or {}
+        local cb = opts.Callback
+
+        local popup = createPopupBase({
+            Title = opts.Title or (opts.Name or "List"),
+            Size = opts.Size or UDim2.new(0, 300, 0, 260),
+            CloseOnClickOutside = (opts.CloseOnClickOutside ~= false)
+        })
+
+        local body = popup.Body
+        local scroll = new("ScrollingFrame", {
+            Size = UDim2.new(1, 0, 1, 0),
+            CanvasSize = UDim2.new(0,0,0,0),
+            BackgroundTransparency = 1,
+            ScrollBarThickness = 6,
+            ZIndex = 61,
+            Parent = body
+        })
+        local layout = new("UIListLayout", {Padding = UDim.new(0, 6)}, scroll)
+        new("UIPadding", {PaddingTop = UDim.new(0, 6), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6)}, scroll)
+
+        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 8)
+        end)
+
+        for _, item in ipairs(items) do
+            local line = new("TextButton", {
+                Text = tostring(item),
+                Size = UDim2.new(1, 0, 0, 28),
+                BackgroundColor3 = Color3.fromRGB(46,46,48),
+                TextColor3 = Color3.fromRGB(235,235,240),
+                Font = Enum.Font.Gotham,
+                TextSize = 13,
+                AutoButtonColor = false,
+                ZIndex = 61,
+                Parent = scroll
+            })
+            new("UICorner", {CornerRadius = UDim.new(0,8)}, line)
+            line.MouseEnter:Connect(function() tween(line, {BackgroundColor3 = Color3.fromRGB(62,62,64)}, 0.1) end)
+            line.MouseLeave:Connect(function() tween(line, {BackgroundColor3 = Color3.fromRGB(46,46,48)}, 0.1) end)
+            line.MouseButton1Click:Connect(function()
+                if cb then pcall(cb, item) end
+                if opts.AutoClose ~= false then popup.Close() end
+            end)
+        end
+
+        return popup
+    end
+
+    -- ==================================================
+    -- Public: Tabs & Controls (inline)
+    -- ==================================================
     function self:CreateTab(tabCfg)
         tabCfg = tabCfg or {}
         local tabName = tabCfg.Name or ("Tab"..(#self._tabs+1))
-        local btn = new("TextButton", {Text=tabName, Size=UDim2.new(1,0,0,34), BackgroundColor3=Color3.fromRGB(28,28,30), TextColor3=Color3.fromRGB(220,220,225), Font=Enum.Font.Gotham, TextSize=14, AutoButtonColor=false}, sidebar)
-        new("UICorner",{CornerRadius=UDim.new(0,8)},btn)
-        local page = new("ScrollingFrame",{Name=tabName.."_Page",Size=UDim2.new(1,0,1,0),CanvasSize=UDim2.new(0,0,0,0),BackgroundTransparency=1,ScrollBarThickness=6,Visible=false,Parent=pages})
-        local list = new("UIListLayout",{Padding=UDim.new(0,8)},page)
-        new("UIPadding",{PaddingTop=UDim.new(0,12),PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,12),PaddingBottom=UDim.new(0,12)},page)
-        list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() page.CanvasSize=UDim2.new(0,0,0,list.AbsoluteContentSize.Y+12) end)
 
-        local tab = {_btn=btn,_page=page,_name=tabName}
+        local btn = new("TextButton", {
+            Text = tabName,
+            Size = UDim2.new(1, 0, 0, 34),
+            BackgroundColor3 = Color3.fromRGB(28,28,30),
+            TextColor3 = Color3.fromRGB(220,220,225),
+            Font = Enum.Font.Gotham,
+            TextSize = 14,
+            AutoButtonColor = false
+        }, sidebar)
+        new("UICorner", { CornerRadius = UDim.new(0,8) }, btn)
+
+        local page = new("ScrollingFrame", {
+            Name = tabName .. "_Page",
+            Size = UDim2.new(1, 0, 1, 0),
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            BackgroundTransparency = 1,
+            ScrollBarThickness = 6,
+            Visible = false,
+            Parent = pages
+        }, pages)
+        local list = new("UIListLayout", { Padding = UDim.new(0,8) }, page)
+        new("UIPadding", { PaddingTop = UDim.new(0,12), PaddingLeft = UDim.new(0,12), PaddingRight = UDim.new(0,12), PaddingBottom = UDim.new(0,12) }, page)
+        list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            page.CanvasSize = UDim2.new(0, 0, 0, list.AbsoluteContentSize.Y + 12)
+        end)
+
+        local tab = { _btn = btn, _page = page, _name = tabName }
+
         local function activate()
-            for _,p in ipairs(self._pages:GetChildren()) do if p:IsA("ScrollingFrame") then p.Visible=false end end
-            for _,b in ipairs(self._sidebar:GetChildren()) do if b:IsA("TextButton") then b.BackgroundColor3=Color3.fromRGB(28,28,30) end end
-            page.Visible=true
-            tween(btn,{BackgroundColor3=Color3.fromRGB(34,34,36)},0.16)
-            self._activeTab=tab
+            for _, p in ipairs(self._pages:GetChildren()) do
+                if p:IsA("ScrollingFrame") then p.Visible = false end
+            end
+            for _, b in ipairs(self._sidebar:GetChildren()) do
+                if b:IsA("TextButton") then b.BackgroundColor3 = Color3.fromRGB(28,28,30) end
+            end
+            page.Visible = true
+            tween(btn, {BackgroundColor3 = Color3.fromRGB(34,34,36)}, 0.16)
+            self._activeTab = tab
         end
-        btn.MouseButton1Click:Connect(activate)
-        if #self._tabs==0 then activate() end
 
-        -- Component builders (Toggle, Button, Slider, etc.) tetap sama seperti versi sebelumnya
-        -- ...
+        btn.MouseButton1Click:Connect(activate)
+        if #self._tabs == 0 then activate() end
+
+        -- ---------- Components ----------
+        function tab:CreateSection(name)
+            local sec = new("Frame", { Size = UDim2.new(1,0,0,30), BackgroundTransparency = 1 }, page)
+            new("TextLabel", {
+                Text = name or "Section",
+                BackgroundTransparency = 1,
+                TextColor3 = Color3.fromRGB(220,220,225),
+                Font = Enum.Font.GothamBold,
+                TextSize = 14,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Size = UDim2.new(1,0,1,0),
+                Parent = sec
+            })
+            return sec
+        end
+
+        function tab:CreateButton(opts)
+            opts = opts or {}
+            local container = new("Frame", { Size = UDim2.new(1,0,0,34), BackgroundTransparency = 1 }, page)
+            local b = new("TextButton", {
+                Text = opts.Name or "Button",
+                Size = UDim2.new(1,0,0,32),
+                BackgroundColor3 = Color3.fromRGB(46,46,48),
+                TextColor3 = Color3.fromRGB(235,235,240),
+                Font = Enum.Font.Gotham,
+                TextSize = 14,
+                AutoButtonColor = false,
+                Parent = container
+            }, container)
+            new("UICorner", { CornerRadius = UDim.new(0,8) }, b)
+            b.MouseEnter:Connect(function() tween(b, {BackgroundColor3 = Color3.fromRGB(62,62,64)}, 0.14) end)
+            b.MouseLeave:Connect(function() tween(b, {BackgroundColor3 = Color3.fromRGB(46,46,48)}, 0.14) end)
+            b.MouseButton1Click:Connect(function()
+                pcall(opts.Callback)
+            end)
+            return b
+        end
+
+        function tab:CreateToggle(opts)
+            opts = opts or {}
+            local flag = opts.Flag
+            local default = opts.CurrentValue
+            if flag then
+                local saved = loadFlag(flag)
+                if saved ~= nil then default = saved end
+            end
+
+            local container = new("Frame", { Size = UDim2.new(1,0,0,34), BackgroundTransparency = 1 }, page)
+            local btn = new("TextButton", {
+                Text = (default and "✅ " or "🔘 ") .. (opts.Name or "Toggle"),
+                Size = UDim2.new(1,0,0,32),
+                BackgroundColor3 = Color3.fromRGB(46,46,48),
+                TextColor3 = Color3.fromRGB(235,235,240),
+                Font = Enum.Font.Gotham,
+                TextSize = 14,
+                AutoButtonColor = false,
+                Parent = container
+            }, container)
+            new("UICorner", { CornerRadius = UDim.new(0,8) }, btn)
+
+            local state = default or false
+            btn.MouseButton1Click:Connect(function()
+                state = not state
+                btn.Text = (state and "✅ " or "🔘 ") .. (opts.Name or "Toggle")
+                if opts.Callback then pcall(opts.Callback, state) end
+                if flag then saveFlag(flag, state) end
+            end)
+            return btn
+        end
+
+        function tab:CreateSlider(opts)
+            opts = opts or {}
+            local flag = opts.Flag
+            local range = opts.Range or {0,100}
+            local min, max = range[1], range[2]
+            local value = opts.CurrentValue or min
+            if flag then
+                local saved = loadFlag(flag)
+                if type(saved) == "number" then value = saved end
+            end
+
+            local container = new("Frame", { Size = UDim2.new(1,0,0,48), BackgroundTransparency = 1 }, page)
+            local label = new("TextLabel", {
+                Text = (opts.Name or "Slider") .. ": " .. tostring(value),
+                Size = UDim2.new(1,0,0,18),
+                BackgroundTransparency = 1,
+                TextColor3 = Color3.fromRGB(230,230,235),
+                Font = Enum.Font.Gotham,
+                TextSize = 14,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = container
+            }, container)
+
+            local barBack = new("Frame", {
+                Size = UDim2.new(1, -10, 0, 12),
+                Position = UDim2.new(0,5,0,26),
+                BackgroundColor3 = Color3.fromRGB(68,68,72),
+                Parent = container
+            }, container)
+            new("UICorner", { CornerRadius = UDim.new(0,6) }, barBack)
+            local fill = new("Frame", {
+                Size = UDim2.new((value-min)/(max-min), 0, 1, 0),
+                BackgroundColor3 = Color3.fromRGB(0,170,255),
+                Parent = barBack
+            }, barBack)
+            new("UICorner", { CornerRadius = UDim.new(0,6) }, fill)
+
+            local dragging = false
+            local function setFromPos(x)
+                local absPos = barBack.AbsolutePosition.X
+                local absSize = barBack.AbsoluteSize.X
+                local rel = clamp((x - absPos) / absSize, 0, 1)
+                local val = math.floor(min + rel * (max - min) + 0.5)
+                value = clamp(val, min, max)
+                fill.Size = UDim2.new((value-min)/(max-min), 0, 1, 0)
+                label.Text = (opts.Name or "Slider") .. ": " .. tostring(value)
+                if opts.Callback then pcall(opts.Callback, value) end
+                if flag then saveFlag(flag, value) end
+            end
+
+            barBack.InputBegan:Connect(function(i)
+                if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                    dragging = true
+                    setFromPos(i.Position.X)
+                end
+            end)
+            UserInputService.InputChanged:Connect(function(i)
+                if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+                    setFromPos(i.Position.X)
+                end
+            end)
+            UserInputService.InputEnded:Connect(function(i)
+                if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                    dragging = false
+                end
+            end)
+            return container
+        end
+
+        function tab:CreateDropdown(opts)
+            opts = opts or {}
+            local flag = opts.Flag
+            local choices = opts.Options or {}
+            local current = opts.CurrentOption or choices[1]
+            if flag then
+                local saved = loadFlag(flag)
+                if saved ~= nil then current = saved end
+            end
+
+            local container = new("Frame", { Size = UDim2.new(1,0,0,36), BackgroundTransparency = 1 }, page)
+            local label = new("TextButton", {
+                Text = (opts.Name or "Dropdown") .. ": " .. tostring(current or "-"),
+                Size = UDim2.new(1,0,0,32),
+                BackgroundColor3 = Color3.fromRGB(46,46,48),
+                TextColor3 = Color3.fromRGB(235,235,240),
+                Font = Enum.Font.Gotham,
+                TextSize = 14,
+                AutoButtonColor = false,
+                Parent = container
+            }, container)
+            new("UICorner", { CornerRadius = UDim.new(0,8) }, label)
+
+            local menu = new("Frame", {
+                Size = UDim2.new(1,0,0,0),
+                Position = UDim2.new(0,0,0,36),
+                BackgroundColor3 = Color3.fromRGB(38,38,40),
+                ClipsDescendants = true,
+                Visible = false,
+                Parent = container
+            }, container)
+            new("UICorner", { CornerRadius = UDim.new(0,8) }, menu)
+            local menuList = new("UIListLayout", { Padding = UDim.new(0,4) }, menu)
+            new("UIPadding", { PaddingTop = UDim.new(0,6), PaddingLeft = UDim.new(0,6), PaddingRight = UDim.new(0,6), PaddingBottom = UDim.new(0,6) }, menu)
+
+            local open = false
+            label.MouseButton1Click:Connect(function()
+                open = not open
+                if open then
+                    menu.Visible = true
+                    tween(menu, {Size = UDim2.new(1,0,0, math.clamp(#choices * 28 + 12, 32, 240))}, 0.18)
+                else
+                    tween(menu, {Size = UDim2.new(1,0,0,0)}, 0.14)
+                    task.delay(0.16, function() if not open then menu.Visible = false end end)
+                end
+            end)
+
+            for _, choice in ipairs(choices) do
+                local it = new("TextButton", {
+                    Text = tostring(choice),
+                    Size = UDim2.new(1,0,0,26),
+                    BackgroundColor3 = Color3.fromRGB(45,45,47),
+                    TextColor3 = Color3.fromRGB(230,230,235),
+                    Font = Enum.Font.Gotham,
+                    TextSize = 13,
+                    AutoButtonColor = false,
+                    Parent = menu
+                }, menu)
+                new("UICorner", { CornerRadius = UDim.new(0,6) }, it)
+                it.MouseButton1Click:Connect(function()
+                    current = choice
+                    label.Text = (opts.Name or "Dropdown") .. ": " .. tostring(current)
+                    if opts.Callback then pcall(opts.Callback, current) end
+                    if flag then saveFlag(flag, current) end
+                    open = false
+                    tween(menu, {Size = UDim2.new(1,0,0,0)}, 0.14)
+                    task.delay(0.16, function() menu.Visible = false end)
+                end)
+            end
+
+            -- tombol opsional untuk munculkan versi popup (kalau mau)
+            if opts.EnablePopupButton then
+                local popBtn = new("TextButton", {
+                    Text = "↗",
+                    Size = UDim2.new(0, 28, 0, 28),
+                    Position = UDim2.new(1, -34, 0, 2),
+                    BackgroundColor3 = Color3.fromRGB(60,60,64),
+                    TextColor3 = Color3.fromRGB(240,240,240),
+                    Font = Enum.Font.GothamBold,
+                    TextSize = 14,
+                    AutoButtonColor = false,
+                    Parent = container
+                })
+                new("UICorner", {CornerRadius = UDim.new(0, 6)}, popBtn)
+                popBtn.MouseButton1Click:Connect(function()
+                    self:CreatePopupDropdown({
+                        Title = opts.Name or "Dropdown",
+                        Options = choices,
+                        Default = current,
+                        Callback = function(v)
+                            current = v
+                            label.Text = (opts.Name or "Dropdown") .. ": " .. tostring(v)
+                            if opts.Callback then pcall(opts.Callback, v) end
+                            if flag then saveFlag(flag, v) end
+                        end
+                    })
+                end)
+            end
+
+            return container
+        end
+
+        function tab:CreateInput(opts)
+            opts = opts or {}
+            local placeholder = opts.PlaceholderText or ""
+            local container = new("Frame", { Size = UDim2.new(1,0,0,46), BackgroundTransparency = 1 }, page)
+            new("TextLabel", {
+                Text = opts.Name or "Input",
+                Size = UDim2.new(1,0,0,18),
+                BackgroundTransparency = 1,
+                TextColor3 = Color3.fromRGB(230,230,235),
+                Font = Enum.Font.Gotham,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = container
+            })
+            local box = new("TextBox", {
+                Text = opts.DefaultText or "",
+                PlaceholderText = placeholder,
+                ClearTextOnFocus = false,
+                Size = UDim2.new(1,0,0,24),
+                Position = UDim2.new(0,0,0,20),
+                BackgroundColor3 = Color3.fromRGB(46,46,48),
+                TextColor3 = Color3.fromRGB(235,235,240),
+                Font = Enum.Font.Gotham,
+                TextSize = 14,
+                Parent = container
+            })
+            new("UICorner", { CornerRadius = UDim.new(0,6) }, box)
+            box.FocusLost:Connect(function(enter)
+                if enter and opts.Callback then pcall(opts.Callback, box.Text) end
+            end)
+
+            -- tombol opsional untuk popup input
+            if opts.EnablePopupButton then
+                local popBtn = new("TextButton", {
+                    Text = "↗",
+                    Size = UDim2.new(0, 28, 0, 24),
+                    Position = UDim2.new(1, -30, 0, 20),
+                    BackgroundColor3 = Color3.fromRGB(60,60,64),
+                    TextColor3 = Color3.fromRGB(240,240,240),
+                    Font = Enum.Font.GothamBold,
+                    TextSize = 14,
+                    AutoButtonColor = false,
+                    Parent = container
+                })
+                new("UICorner", {CornerRadius = UDim.new(0, 6)}, popBtn)
+                popBtn.MouseButton1Click:Connect(function()
+                    self:CreatePopupInput({
+                        Title = opts.Name or "Input",
+                        Placeholder = placeholder,
+                        DefaultText = box.Text,
+                        ConfirmText = "OK",
+                        Callback = function(v)
+                            box.Text = v
+                            if opts.Callback then pcall(opts.Callback, v) end
+                        end
+                    })
+                end)
+            end
+
+            return container
+        end
+
+        function tab:CreateKeybind(opts)
+            opts = opts or {}
+            local current = opts.DefaultKey or Enum.KeyCode.G
+            local container = new("Frame", { Size = UDim2.new(1,0,0,34), BackgroundTransparency = 1 }, page)
+            local btn = new("TextButton", {
+                Text = (opts.Name or "Keybind") .. ": " .. tostring(current.Name or current),
+                Size = UDim2.new(1,0,0,32),
+                BackgroundColor3 = Color3.fromRGB(46,46,48),
+                TextColor3 = Color3.fromRGB(235,235,240),
+                Font = Enum.Font.Gotham,
+                TextSize = 14,
+                AutoButtonColor = false,
+                Parent = container
+            }, container)
+            new("UICorner", { CornerRadius = UDim.new(0,8) }, btn)
+
+            local listening = false
+            btn.MouseButton1Click:Connect(function()
+                listening = true
+                btn.Text = (opts.Name or "Keybind") .. ": [Press key]"
+            end)
+
+            UserInputService.InputBegan:Connect(function(input, gpe)
+                if gpe then return end
+                if listening and input.KeyCode ~= Enum.KeyCode.Unknown then
+                    current = input.KeyCode
+                    btn.Text = (opts.Name or "Keybind") .. ": " .. tostring(current.Name)
+                    listening = false
+                    if opts.Callback then pcall(opts.Callback, current) end
+                elseif input.KeyCode == current then
+                    if opts.Callback then pcall(opts.Callback, current, true) end
+                end
+            end)
+            return container
+        end
 
         table.insert(self._tabs, tab)
         return tab
     end
 
-    function self:Notify(title,text,duration)
-        duration=duration or 2.4
-        local note=new("Frame",{Size=UDim2.new(0,320,0,48),Position=UDim2.new(0.5,-160,0,12),BackgroundColor3=Color3.fromRGB(36,36,38),Parent=self._main},self._main)
-        new("UICorner",{CornerRadius=UDim.new(0,8)},note)
-        new("UIStroke",{Color=Color3.fromRGB(60,60,64),Thickness=1},note)
-        local t1=new("TextLabel",{Text=title or "Info",Size=UDim2.new(1,-12,0,20),Position=UDim2.new(0,8,0,4),BackgroundTransparency=1,Font=Enum.Font.GothamBold,TextSize=14,TextColor3=Color3.fromRGB(235,235,240),TextXAlignment=Enum.TextXAlignment.Left,Parent=note},note)
-        local t2=new("TextLabel",{Text=text or "",Size=UDim2.new(1,-12,0,18),Position=UDim2.new(0,8,0,22),BackgroundTransparency=1,Font=Enum.Font.Gotham,TextSize=13,TextColor3=Color3.fromRGB(200,200,205),TextXAlignment=Enum.TextXAlignment.Left,Parent=note},note)
-        note.AnchorPoint=Vector2.new(0.5,0)
-        note.Position=UDim2.new(0.5,-160,0,-60)
-        tween(note,{Position=UDim2.new(0.5,-160,0,12),BackgroundTransparency=0},0.22)
-        task.delay(duration,function() tween(note,{Position=UDim2.new(0.5,-160,0,-60),BackgroundTransparency=1},0.22) task.delay(0.22,function() if note and note.Parent then note:Destroy() end end) end)
-    end
-
+    -- ==================================================
+    -- Done
+    -- ==================================================
     return self
 end
 
 return IkanTongkol
+
