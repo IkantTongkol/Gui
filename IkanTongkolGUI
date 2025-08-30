@@ -240,19 +240,23 @@ UIS.InputChanged:Connect(function(input)
 end)
 
         MinBtn.MouseButton1Click:Connect(function()
-            main.Visible = false
-            MiniLogo.Visible = true
-        end)
+    print("Minimize clicked")
+    main.Visible = false
+    MiniLogo.Visible = true
+end)
 
-        CloseBtn.MouseButton1Click:Connect(function()
-            main.Visible = false
-            MiniLogo.Visible = false
-        end)
+CloseBtn.MouseButton1Click:Connect(function()
+    print("Close clicked")
+    main.Visible = false
+    MiniLogo.Visible = false
+end)
 
-        MiniLogo.MouseButton1Click:Connect(function()
-            main.Visible = true
-            MiniLogo.Visible = false
-        end)
+MiniLogo.MouseButton1Click:Connect(function()
+    print("MiniLogo clicked")
+    main.Visible = true
+    MiniLogo.Visible = false
+end)
+
 
 
     -- Objek Window
