@@ -816,78 +816,96 @@ end
         end
 
         function tab:CreateDropdown(opts)
-            opts = opts or {}
-            local flag = opts.Flag
-            local choices = opts.Options or {}
-            local current = opts.CurrentOption or choices[1]
-            if flag then
-                local saved = loadFlag(flag)
-                if saved ~= nil then current = saved end
-            end
+        opts = opts or {}
+        local flag = opts.Flag
+        local choices = opts.Options or {}
+        local current = opts.CurrentOption or choices[1]
+        if flag then
+            local saved = loadFlag(flag)
+            if saved ~= nil then current = saved end
+        end
 
-            local container = new("Frame", { Size = UDim2.new(1,0,0,36), BackgroundTransparency = 1 }, page)
-            local label = new("TextButton", {
-                Text = (opts.Name or "Dropdown") .. ": " .. tostring(current or "-"),
-                Size = UDim2.new(1,0,0,32),
-                BackgroundColor3 = Color3.fromRGB(46,46,48),
-                TextColor3 = Color3.fromRGB(235,235,240),
-                Font = Enum.Font.Gotham,
-                TextSize = 14,
-                AutoButtonColor = false,
-                Parent = container
-            }, container)
-            new("UICorner", { CornerRadius = UDim.new(0,8) }, label)
+        -- MODIFIED: simpan tinggi awal container
+        local baseHeight = 36
+        local container = new("Frame", {
+            Size = UDim2.new(1, 0, 0, baseHeight),
+            BackgroundTransparency = 1
+        }, page)
 
-            local menu = new("Frame", {
-                Size = UDim2.new(1,0,0,0),
-                Position = UDim2.new(0,0,0,36),
-                BackgroundColor3 = Color3.fromRGB(38,38,40),
-                ClipsDescendants = true,
-                Visible = false,
-                Parent = container
-            }, container)
-            new("UICorner", { CornerRadius = UDim.new(0,8) }, menu)
-            local menuList = new("UIListLayout", { Padding = UDim.new(0,4) }, menu)
-            new("UIPadding", { PaddingTop = UDim.new(0,6), PaddingLeft = UDim.new(0,6), PaddingRight = UDim.new(0,6), PaddingBottom = UDim.new(0,6) }, menu)
+        local label = new("TextButton", {
+            Text = (opts.Name or "Dropdown") .. ": " .. tostring(current or "-"),
+            Size = UDim2.new(1, 0, 0, 32),
+            BackgroundColor3 = Color3.fromRGB(46,46,48),
+            TextColor3 = Color3.fromRGB(235,235,240),
+            Font = Enum.Font.Gotham,
+            TextSize = 14,
+            AutoButtonColor = false,
+            Parent = container
+        }, container)
+        new("UICorner", { CornerRadius = UDim.new(0,8) }, label)
 
-            local open = false
-            label.MouseButton1Click:Connect(function()
-                open = not open
-                if open then
-                    menu.Visible = true
-                    tween(menu, {Size = UDim2.new(1,0,0, math.clamp(#choices * 28 + 12, 32, 240))}, 0.18)
-                else
-                    tween(menu, {Size = UDim2.new(1,0,0,0)}, 0.14)
-                    task.delay(0.16, function() if not open then menu.Visible = false end end)
-                end
-            end)
+        local menu = new("Frame", {
+            Size = UDim2.new(1,0,0,0),
+            Position = UDim2.new(0,0,0,36),
+            BackgroundColor3 = Color3.fromRGB(38,38,40),
+            ClipsDescendants = true,
+            Visible = false,
+            Parent = container
+        }, container)
+        new("UICorner", { CornerRadius = UDim.new(0,8) }, menu)
+        new("UIListLayout", { Padding = UDim.new(0,4) }, menu)
+        new("UIPadding", {
+            PaddingTop = UDim.new(0,6),
+            PaddingLeft = UDim.new(0,6),
+            PaddingRight = UDim.new(0,6),
+            PaddingBottom = UDim.new(0,6)
+        }, menu)
 
-            for _, choice in ipairs(choices) do
-                local it = new("TextButton", {
-                    Text = tostring(choice),
-                    Size = UDim2.new(1,0,0,26),
-                    BackgroundColor3 = Color3.fromRGB(45,45,47),
-                    TextColor3 = Color3.fromRGB(230,230,235),
-                    Font = Enum.Font.Gotham,
-                    TextSize = 13,
-                    AutoButtonColor = false,
-                    Parent = menu
-                }, menu)
-                new("UICorner", { CornerRadius = UDim.new(0,6) }, it)
-                it.MouseButton1Click:Connect(function()
-                    current = choice
-                    label.Text = (opts.Name or "Dropdown") .. ": " .. tostring(current)
-                    if opts.Callback then pcall(opts.Callback, current) end
-                    if flag then saveFlag(flag, current) end
-                    open = false
-                    tween(menu, {Size = UDim2.new(1,0,0,0)}, 0.14)
-                    task.delay(0.16, function() menu.Visible = false end)
+        local open = false
+        label.MouseButton1Click:Connect(function()
+            open = not open
+            if open then
+                menu.Visible = true
+                local menuHeight = math.clamp(#choices * 28 + 12, 32, 240)
+                tween(menu, {Size = UDim2.new(1,0,0, menuHeight)}, 0.18)
+                tween(container, {Size = UDim2.new(1,0,0, baseHeight + menuHeight)}, 0.18) -- MODIFIED
+            else
+                tween(menu, {Size = UDim2.new(1,0,0,0)}, 0.14)
+                tween(container, {Size = UDim2.new(1,0,0, baseHeight)}, 0.14) -- MODIFIED
+                task.delay(0.16, function()
+                    if not open then menu.Visible = false end
                 end)
             end
+        end)
 
-            -- tombol opsional untuk munculkan versi popup (kalau mau)
-            if opts.EnablePopupButton then
-               local popBtn = new("TextButton", {
+        for _, choice in ipairs(choices) do
+            local it = new("TextButton", {
+                Text = tostring(choice),
+                Size = UDim2.new(1,0,0,26),
+                BackgroundColor3 = Color3.fromRGB(45,45,47),
+                TextColor3 = Color3.fromRGB(230,230,235),
+                Font = Enum.Font.Gotham,
+                TextSize = 13,
+                AutoButtonColor = false,
+                Parent = menu
+            }, menu)
+            new("UICorner", { CornerRadius = UDim.new(0,6) }, it)
+
+            it.MouseButton1Click:Connect(function()
+                current = choice
+                label.Text = (opts.Name or "Dropdown") .. ": " .. tostring(current)
+                if opts.Callback then pcall(opts.Callback, current) end
+                if flag then saveFlag(flag, current) end
+                open = false
+                tween(menu, {Size = UDim2.new(1,0,0,0)}, 0.14)
+                tween(container, {Size = UDim2.new(1,0,0, baseHeight)}, 0.14)
+                task.delay(0.16, function() menu.Visible = false end)
+            end)
+        end
+
+        -- Optional popup button
+        if opts.EnablePopupButton then
+            local popBtn = new("TextButton", {
                 Text = "↗",
                 Size = UDim2.new(0, 28, 0, 28),
                 Position = UDim2.new(1, -34, 0, 2),
@@ -896,17 +914,15 @@ end
                 Font = Enum.Font.GothamBold,
                 TextSize = 14,
                 AutoButtonColor = false,
-                Parent = container,
-                ZIndex = 10
+                Parent = container
             })
-                new("UICorner", {CornerRadius = UDim.new(0, 6)}, popBtn)
-                popBtn.MouseButton1Click:Connect(function()
-                print("↗ Button clicked")
+            new("UICorner", {CornerRadius = UDim.new(0, 6)}, popBtn)
+            popBtn.MouseButton1Click:Connect(function()
                 tab._ui:CreatePopupDropdown({
-                Title = opts.Name or "Dropdown",
-                        Options = choices,
-                        Default = current,
-                        Callback = function(v)
+                    Title = opts.Name or "Dropdown",
+                    Options = choices,
+                    Default = current,
+                    Callback = function(v)
                         current = v
                         label.Text = (opts.Name or "Dropdown") .. ": " .. tostring(v)
                         if opts.Callback then pcall(opts.Callback, v) end
@@ -914,11 +930,11 @@ end
                     end
                 })
             end)
-
-            end
-
-            return container
         end
+
+        return container
+    end
+
 
         function tab:CreateInput(opts)
             opts = opts or {}
