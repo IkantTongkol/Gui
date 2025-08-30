@@ -657,9 +657,9 @@ end
             page.CanvasSize = UDim2.new(0, 0, 0, list.AbsoluteContentSize.Y + 12)
         end)
 
-        local tab = { _btn = btn, _page = page, _name = tabName }
+        local tab = { _btn = btn, _page = page, _name = tabName,  _ui = self, }
 
-        tab._ui = self
+       
 
         local function activate()
             for _, p in ipairs(self._pages:GetChildren()) do
@@ -900,18 +900,20 @@ end
                 })
                 new("UICorner", {CornerRadius = UDim.new(0, 6)}, popBtn)
                 popBtn.MouseButton1Click:Connect(function()
-                    gui.tab:CreatePopupDropdown({
-                        Title = opts.Name or "Dropdown",
-                        Options = choices,
-                        Default = current,
-                        Callback = function(v)
-                            current = v
-                            label.Text = (opts.Name or "Dropdown") .. ": " .. tostring(v)
-                            if opts.Callback then pcall(opts.Callback, v) end
-                            if flag then saveFlag(flag, v) end
-                        end
-                    })
-                end)
+                print("↗ Button clicked")
+                tab._ui:CreatePopupDropdown({
+                Title = opts.Name or "Dropdown",
+            Options = choices,
+            Default = current,
+            Callback = function(v)
+            current = v
+            label.Text = (opts.Name or "Dropdown") .. ": " .. tostring(v)
+            if opts.Callback then pcall(opts.Callback, v) end
+            if flag then saveFlag(flag, v) end
+        end
+    })
+end)
+
             end
 
             return container
@@ -963,7 +965,7 @@ end
                 })
                 new("UICorner", {CornerRadius = UDim.new(0, 6)}, popBtn)
                 popBtn.MouseButton1Click:Connect(function()
-                    gui.tab:CreatePopupInput({
+                    gui._tab:CreatePopupInput({
                         Title = opts.Name or "Input",
                         Placeholder = placeholder,
                         DefaultText = box.Text,
