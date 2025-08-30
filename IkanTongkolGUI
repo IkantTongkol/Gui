@@ -1,12 +1,4 @@
 -- IkanTongkolGUI.lua (Full-featured)
--- Fitur:
--- - Window utama (drag), Close, Minimize + Logo ikan (drag + click restore)
--- - Sidebar + Tab + Section
--- - Komponen: Button, Toggle, Slider, Dropdown (inline), Textbox (Input), Keybind
--- - Save/Load via Flag (per pemain)
--- - Notification
--- - Popup terpisah: CreatePopupDropdown, CreatePopupInput, CreatePopupList
--- - Popup draggable, ikut pindah bareng window, bisa close dengan klik area kosong GUI (optional)
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -119,44 +111,37 @@ function IkanTongkol:CreateWindow(cfg)
     }, top)
 
     -- Tombol Close & Minimize
-    local closeBtn = new("TextButton", {
-        Name = "Close",
-        BackgroundTransparency = 0.6,
-        Size = UDim2.new(0, 36, 0, 28),
-        Position = UDim2.new(1, -46, 0, 8),
-        Text = "✕",
-        Font = Enum.Font.GothamBold,
-        TextSize = 16,
-        TextColor3 = Color3.fromRGB(240,80,80),
-        AutoButtonColor = false,
-    }, top)
-    new("UICorner", { CornerRadius = UDim.new(0,8) }, closeBtn)
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Parent = top
+    CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+    CloseBtn.Position = UDim2.new(1, -35, 0.5, -15)
+    CloseBtn.Text = "❌"
+    CloseBtn.TextSize = 20
+    CloseBtn.Font = Enum.Font.SourceSansBold
+    CloseBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+    CloseBtn.BackgroundTransparency = 1
+    new("UICorner", { CornerRadius = UDim.new(0,8) }, CloseBtn)
 
-    local minBtn = new("TextButton", {
-        Name = "Minimize",
-        BackgroundTransparency = 0.6,
-        Size = UDim2.new(0, 36, 0, 28),
-        Position = UDim2.new(1, -92, 0, 8),
-        Text = "-",
-        Font = Enum.Font.GothamBold,
-        TextSize = 16,
-        TextColor3 = Color3.fromRGB(200,200,200),
-        AutoButtonColor = false,
-    }, top)
-    new("UICorner", { CornerRadius = UDim.new(0,8) }, minBtn)
+    local MinBtn = Instance.new("TextButton")
+    MinBtn.Parent = top
+    MinBtn.Size = UDim2.new(0, 30, 0, 30)
+    MinBtn.Position = UDim2.new(1, -65, 0.5, -15)
+    MinBtn.Text = "➖"
+    MinBtn.TextSize = 20
+    MinBtn.Font = Enum.Font.SourceSansBold
+    MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MinBtn.BackgroundTransparency = 1
+    new("UICorner", { CornerRadius = UDim.new(0,8) }, MinBtn)
 
     -- Logo ikan (visible saat minimize). Pakai ImageButton biar bisa di-klik.
-    local logo = new("ImageButton", {
-        Name = "Logo",
-        Size = UDim2.new(0, 42, 0, 42),
-        Position = UDim2.new(0, 18, 0, 18),
-        BackgroundTransparency = 1,
-        Image = cfg.LogoImage or "rbxassetid://13321241755", -- ganti id jika perlu
-        Visible = false,
-        AutoButtonColor = true,
-    }, gui)
-    logo.Active = true
-    logo.Selectable = true
+    local MiniLogo = Instance.new("ImageButton")
+    MiniLogo.Parent = gui
+    MiniLogo.Size = UDim2.new(0, 55, 0, 55)
+    MiniLogo.Position = UDim2.new(0, 20, 1, -80)
+    MiniLogo.Image = "rbxassetid://6031075931" -- default icon 🐟
+    MiniLogo.Visible = false
+    MiniLogo.Active = true
+    MiniLogo.Selectable = true
 
     -- Sidebar + Content area
     local sidebar = new("Frame", {
@@ -215,45 +200,60 @@ function IkanTongkol:CreateWindow(cfg)
     end
 
     -- Drag Logo
-    do
-        local dragging, dragStart, startPos
-        logo.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = true
-                dragStart = input.Position
-                startPos = logo.Position
-                input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then dragging = false end
-                end)
-            end
-        end)
-        UserInputService.InputChanged:Connect(function(input)
-            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-                local delta = input.Position - dragStart
-                logo.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    local UIS = game:GetService("UserInputService")
+local dragging, dragInput, dragStart, startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    MiniLogo.Position = UDim2.new(
+        startPos.X.Scale, startPos.X.Offset + delta.X,
+        startPos.Y.Scale, startPos.Y.Offset + delta.Y
+    )
+end
+
+MiniLogo.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MiniLogo.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
             end
         end)
     end
+end)
+
+MiniLogo.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
 
     -- Tombol Close/Minimize/Logo
-    closeBtn.MouseEnter:Connect(function() tween(closeBtn, {BackgroundTransparency = 0.2}, 0.16) end)
-    closeBtn.MouseLeave:Connect(function() tween(closeBtn, {BackgroundTransparency = 0.6}, 0.16) end)
-    closeBtn.MouseButton1Click:Connect(function()
-        tween(main, {Size = UDim2.new(0,0,0,0)}, 0.22)
-        task.delay(0.22, function() gui:Destroy() end)
-    end)
+    MinBtn.MouseButton1Click:Connect(function()
+    Main.Visible = false
+    MiniLogo.Visible = true
+end)
 
-    minBtn.MouseEnter:Connect(function() tween(minBtn, {BackgroundTransparency = 0.2}, 0.16) end)
-    minBtn.MouseLeave:Connect(function() tween(minBtn, {BackgroundTransparency = 0.6}, 0.16) end)
-    minBtn.MouseButton1Click:Connect(function()
-        main.Visible = false
-        logo.Visible = true
-    end)
+CloseBtn.MouseButton1Click:Connect(function()
+    Main.Visible = false
+    MiniLogo.Visible = false
+end)
 
-    logo.MouseButton1Click:Connect(function()
-        logo.Visible = false
-        main.Visible = true
-    end)
+MiniLogo.MouseButton1Click:Connect(function()
+    Main.Visible = true
+    MiniLogo.Visible = false
+end)
 
     -- Objek Window
     self._gui = gui
@@ -267,7 +267,7 @@ function IkanTongkol:CreateWindow(cfg)
     self._notifFolder = notifFolder
     self._popupsFolder = popupsFolder
     self._overlay = overlay
-    self._logo = logo
+    self._logo = MiniLogo
 
     -- ==================================================
     -- Public: Notifications
@@ -428,7 +428,20 @@ function IkanTongkol:CreateWindow(cfg)
                     closePopup()
                 end
             end
-            self._overlay.MouseButton1Click:Connect(overlayClick)
+            if not self._overlay._bound then
+    self._overlay.MouseButton1Click:Connect(function()
+        local kids = self._popupsFolder:GetChildren()
+        local topPopup = kids[#kids]
+        if topPopup then
+            topPopup:Destroy()
+        end
+        if #self._popupsFolder:GetChildren() <= 1 then
+            self._overlay.Visible = false
+        end
+    end)
+    self._overlay._bound = true
+end
+    
         end
 
         local api = {
@@ -645,6 +658,8 @@ function IkanTongkol:CreateWindow(cfg)
         end)
 
         local tab = { _btn = btn, _page = page, _name = tabName }
+
+        tab._ui = self
 
         local function activate()
             for _, p in ipairs(self._pages:GetChildren()) do
@@ -885,7 +900,7 @@ function IkanTongkol:CreateWindow(cfg)
                 })
                 new("UICorner", {CornerRadius = UDim.new(0, 6)}, popBtn)
                 popBtn.MouseButton1Click:Connect(function()
-                    self:CreatePopupDropdown({
+                    gui.tab:CreatePopupDropdown({
                         Title = opts.Name or "Dropdown",
                         Options = choices,
                         Default = current,
@@ -948,7 +963,7 @@ function IkanTongkol:CreateWindow(cfg)
                 })
                 new("UICorner", {CornerRadius = UDim.new(0, 6)}, popBtn)
                 popBtn.MouseButton1Click:Connect(function()
-                    self:CreatePopupInput({
+                    gui.tab:CreatePopupInput({
                         Title = opts.Name or "Input",
                         Placeholder = placeholder,
                         DefaultText = box.Text,
@@ -1011,4 +1026,3 @@ function IkanTongkol:CreateWindow(cfg)
 end
 
 return IkanTongkol
-
