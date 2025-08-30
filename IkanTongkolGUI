@@ -239,21 +239,21 @@ UIS.InputChanged:Connect(function(input)
     end
 end)
 
-    -- Tombol Close/Minimize/Logo
-    MinBtn.MouseButton1Click:Connect(function()
-    Main.Visible = false
-    MiniLogo.Visible = true
-end)
+        MinBtn.MouseButton1Click:Connect(function()
+            main.Visible = false
+            MiniLogo.Visible = true
+        end)
 
-CloseBtn.MouseButton1Click:Connect(function()
-    Main.Visible = false
-    MiniLogo.Visible = false
-end)
+        CloseBtn.MouseButton1Click:Connect(function()
+            main.Visible = false
+            MiniLogo.Visible = false
+        end)
 
-MiniLogo.MouseButton1Click:Connect(function()
-    Main.Visible = true
-    MiniLogo.Visible = false
-end)
+        MiniLogo.MouseButton1Click:Connect(function()
+            main.Visible = true
+            MiniLogo.Visible = false
+        end)
+
 
     -- Objek Window
     self._gui = gui
