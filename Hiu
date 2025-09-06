@@ -1,0 +1,126 @@
+--// IkanTongkol UI Library
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+
+local IkanTongkol = {}
+IkanTongkol.__index = IkanTongkol
+
+-- buat window utama
+function IkanTongkol:MakeWindow(props)
+    props = props or {}
+    local window = setmetatable({}, self)
+
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "IkanTongkolUI"
+    ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    local Main = Instance.new("Frame")
+    Main.Size = UDim2.new(0, 550, 0, 400) -- ukuran mirip Orion
+    Main.Position = UDim2.new(0.5, -275, 0.5, -200)
+    Main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    Main.BorderSizePixel = 0
+    Main.Parent = ScreenGui
+
+    local UIStroke = Instance.new("UIStroke")
+    UIStroke.Color = Color3.fromRGB(60, 60, 60)
+    UIStroke.Thickness = 2
+    UIStroke.Parent = Main
+
+    -- Title bar
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Size = UDim2.new(1, 0, 0, 40)
+    TitleBar.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    TitleBar.BorderSizePixel = 0
+    TitleBar.Parent = Main
+
+    local Title = Instance.new("TextLabel")
+    Title.Size = UDim2.new(1, -80, 1, 0)
+    Title.Position = UDim2.new(0, 10, 0, 0)
+    Title.BackgroundTransparency = 1
+    Title.TextXAlignment = Enum.TextXAlignment.Left
+    Title.Text = props.Name or "IkanTongkol"
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 20
+    Title.TextColor3 = Color3.fromRGB(240, 240, 240)
+    Title.Parent = TitleBar
+
+    -- tombol close
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 40, 1, 0)
+    CloseBtn.Position = UDim2.new(1, -40, 0, 0)
+    CloseBtn.BackgroundTransparency = 1
+    CloseBtn.Text = "X"
+    CloseBtn.TextColor3 = Color3.fromRGB(240, 80, 80)
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.TextSize = 18
+    CloseBtn.Parent = TitleBar
+
+    CloseBtn.MouseButton1Click:Connect(function()
+        ScreenGui:Destroy()
+    end)
+
+    -- tombol minimize
+    local MinBtn = Instance.new("TextButton")
+    MinBtn.Size = UDim2.new(0, 40, 1, 0)
+    MinBtn.Position = UDim2.new(1, -80, 0, 0)
+    MinBtn.BackgroundTransparency = 1
+    MinBtn.Text = "-"
+    MinBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    MinBtn.Font = Enum.Font.GothamBold
+    MinBtn.TextSize = 18
+    MinBtn.Parent = TitleBar
+
+    local minimized = false
+    MinBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        if minimized then
+            TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 550, 0, 40)}):Play()
+        else
+            TweenService:Create(Main, TweenInfo.new(0.3), {Size = UDim2.new(0, 550, 0, 400)}):Play()
+        end
+    end)
+
+    -- drag window
+    local dragging, dragStart, startPos
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = Main.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            Main.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    -- container tab
+    local TabContainer = Instance.new("Frame")
+    TabContainer.Size = UDim2.new(1, 0, 1, -40)
+    TabContainer.Position = UDim2.new(0, 0, 0, 40)
+    TabContainer.BackgroundTransparency = 1
+    TabContainer.Parent = Main
+
+    local UIListLayout = Instance.new("UIListLayout")
+    UIListLayout.Padding = UDim.new(0, 5)
+    UIListLayout.Parent = TabContainer
+
+    window.Main = Main
+    window.ScreenGui = ScreenGui
+    window.TabContainer = TabContainer
+    window.Tabs = {}
+
+    return window
+end
