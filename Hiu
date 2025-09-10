@@ -1,124 +1,54 @@
+--// IkanTongkol v2 (Sidebar) - UI Library
+-- by you + ChatGPT
 
-local IkanTongkol = {}
-
--- ========= THEME =========
-local Theme = {
-    BG        = Color3.fromRGB(26, 27, 30),
-    Panel     = Color3.fromRGB(32, 34, 37),
-    Accent    = Color3.fromRGB(0, 170, 255),
-    Accent2   = Color3.fromRGB(45, 160, 255),
-    Text      = Color3.fromRGB(235, 235, 235),
-    Muted     = Color3.fromRGB(160, 160, 160),
-    Stroke    = Color3.fromRGB(60, 60, 65),
-    Danger    = Color3.fromRGB(255, 70, 90),
-    Success   = Color3.fromRGB(60, 205, 105),
-}
-
--- ========= HELPERS =========
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
-local RS = game:GetService("RunService")
+local Run = game:GetService("RunService")
 local LP = Players.LocalPlayer
 
-local function corner(r)
-    local ui = Instance.new("UICorner")
-    ui.CornerRadius = UDim.new(0, r or 8)
-    return ui
-end
+local Theme = {
+    BG        = Color3.fromRGB(23,24,27),
+    Panel     = Color3.fromRGB(31,33,36),
+    Sidebar   = Color3.fromRGB(28,30,33),
+    Accent    = Color3.fromRGB(0,170,255),
+    Accent2   = Color3.fromRGB(55,190,255),
+    Text      = Color3.fromRGB(235,235,235),
+    Muted     = Color3.fromRGB(158,160,165),
+    Stroke    = Color3.fromRGB(60,60,66),
+    Good      = Color3.fromRGB(58,197,109),
+    Danger    = Color3.fromRGB(255,75,90),
+}
 
-local function stroke(thick, col, trans)
-    local s = Instance.new("UIStroke")
-    s.Thickness = thick or 1
-    s.Color = col or Theme.Stroke
-    s.Transparency = trans or 0
-    return s
-end
+local function corner(obj, r) local c=Instance.new("UICorner"); c.CornerRadius=UDim.new(0,r or 10); c.Parent=obj; return c end
+local function stroke(obj,t,c,tr) local s=Instance.new("UIStroke"); s.Thickness=t or 1; s.Color=c or Theme.Stroke; s.Transparency=tr or 0; s.Parent=obj; return s end
+local function vlist(parent, pad) local l=Instance.new("UIListLayout"); l.Padding=UDim.new(0,pad or 8); l.FillDirection=Enum.FillDirection.Vertical; l.SortOrder=Enum.SortOrder.LayoutOrder; l.Parent=parent; return l end
+local function hlist(parent, pad) local l=Instance.new("UIListLayout"); l.Padding=UDim.new(0,pad or 8); l.FillDirection=Enum.FillDirection.Horizontal; l.VerticalAlignment=Enum.VerticalAlignment.Center; l.SortOrder=Enum.SortOrder.LayoutOrder; l.Parent=parent; return l end
+local function pad(obj,px) local p=Instance.new("UIPadding"); local u=UDim.new(0,px or 10); p.PaddingLeft,u,p.PaddingTop,u,p.PaddingRight,u,p.PaddingBottom=u; p.Parent=obj; return p end
+local function safe(f, ...) if typeof(f)=="function" then local ok,e=pcall(f, ...); if not ok then warn("[IkanTongkol]",e) end end end
 
-local function padding(px)
-    local p = Instance.new("UIPadding")
-    local v = UDim.new(0, px or 8)
-    p.PaddingLeft, p.PaddingRight, p.PaddingTop, p.PaddingBottom = v, v, v, v
-    return p
-end
-
-local function vlist(space)
-    local l = Instance.new("UIListLayout")
-    l.FillDirection = Enum.FillDirection.Vertical
-    l.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    l.VerticalAlignment = Enum.VerticalAlignment.Top
-    l.SortOrder = Enum.SortOrder.LayoutOrder
-    l.Padding = UDim.new(0, space or 6)
-    return l
-end
-
-local function hlist(space)
-    local l = Instance.new("UIListLayout")
-    l.FillDirection = Enum.FillDirection.Horizontal
-    l.HorizontalAlignment = Enum.HorizontalAlignment.Left
-    l.VerticalAlignment = Enum.VerticalAlignment.Center
-    l.SortOrder = Enum.SortOrder.LayoutOrder
-    l.Padding = UDim.new(0, space or 6)
-    return l
-end
-
-local function mkBtn(text, h)
-    local b = Instance.new("TextButton")
-    b.Text = text or "Button"
-    b.Font = Enum.Font.GothamSemibold
-    b.TextSize = 14
-    b.TextColor3 = Theme.Text
-    b.AutoButtonColor = true
-    b.BackgroundColor3 = Theme.Accent
-    b.Size = UDim2.new(0, 100, 0, h or 30)
-    b.BorderSizePixel = 0
-    corner(8).Parent = b
-    stroke(1, Color3.new(0,0,0), 0.2).Parent = b
-    return b
-end
-
-local function mkSmallBtn(text)
-    local b = mkBtn(text, 26)
-    b.BackgroundColor3 = Theme.Panel
-    b.TextColor3 = Theme.Text
-    return b
-end
-
-local function safe(f, ...)
-    if type(f) == "function" then
-        local ok, err = pcall(f, ...)
-        if not ok then warn("[IkanTongkol] Callback error:", err) end
-    end
-end
-
-local function canWrite()
-    local env = getfenv and getfenv()
-    return (writefile and readfile) or (env and env.writefile and env.readfile)
-end
-
+local function canWrite() return (writefile and readfile and isfile and makefolder) end
 local function writeJSON(path, tbl)
-    local ok, encoded = pcall(function() return game:GetService("HttpService"):JSONEncode(tbl) end)
-    if not ok then return end
-    pcall(function() writefile(path, encoded) end)
+    local ok, enc = pcall(function() return game:GetService("HttpService"):JSONEncode(tbl) end)
+    if ok then pcall(function() writefile(path, enc) end) end
 end
-
 local function readJSON(path)
-    local ok, data = pcall(function() return readfile(path) end)
-    if not ok then return nil end
-    local ok2, dec = pcall(function() return game:GetService("HttpService"):JSONDecode(data) end)
-    if not ok2 then return nil end
-    return dec
+    if not (isfile and isfile(path)) then return nil end
+    local ok,d = pcall(function() return readfile(path) end); if not ok then return nil end
+    local ok2,dec = pcall(function() return game:GetService("HttpService"):JSONDecode(d) end); if ok2 then return dec end
 end
 
--- ========= WINDOW =========
-function IkanTongkol:CreateWindow(cfg)
-    cfg = cfg or {}
-    local Name = cfg.Name or "Ikan Tongkol"
-    local Keybind = cfg.ToggleUIKeybind or "K"
-    local FolderName = (cfg.ConfigurationSaving and cfg.ConfigurationSaving.Enabled and cfg.ConfigurationSaving.FolderName) or "IkanTongkol"
-    local FileName   = (cfg.ConfigurationSaving and cfg.ConfigurationSaving.Enabled and cfg.ConfigurationSaving.FileName) or "Config"
-    local doSave     = (cfg.ConfigurationSaving and cfg.ConfigurationSaving.Enabled) and canWrite()
+local Library = {}
 
-    -- ScreenGui
+function Library:CreateWindow(cfg)
+    cfg = cfg or {}
+    local Name = cfg.Name or "Ikan Tongkol UI"
+    local Keybind = cfg.ToggleUIKeybind or "K"
+    local SaveCfg = cfg.ConfigurationSaving or {}
+    local doSave  = SaveCfg.Enabled and canWrite()
+    local folder  = SaveCfg.FolderName or "ikantongkolHUB"
+    local file    = SaveCfg.FileName or "config"
+
+    -- screen
     local sg = Instance.new("ScreenGui")
     sg.Name = "IkanTongkolUI"
     sg.IgnoreGuiInset = true
@@ -126,201 +56,219 @@ function IkanTongkol:CreateWindow(cfg)
     sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     sg.Parent = LP:WaitForChild("PlayerGui")
 
-    -- Main Window
+    -- main window
     local win = Instance.new("Frame")
     win.Name = "Window"
-    win.Size = UDim2.fromOffset(560, 420)
-    win.Position = UDim2.new(0.5, -280, 0.5, -210)
+    win.Size = UDim2.fromOffset(860, 520)
+    win.Position = UDim2.new(0.5, -430, 0.5, -260)
     win.BackgroundColor3 = Theme.BG
     win.Parent = sg
-    corner(12).Parent = win
-    stroke(1).Parent = win
-    padding(10).Parent = win
+    corner(win, 12); stroke(win,1)
 
-    -- Drag
+    -- drag + titlebar
+    local title = Instance.new("Frame")
+    title.Size = UDim2.new(1,0,0,44)
+    title.BackgroundTransparency = 1
+    title.Parent = win
+    local tpad = pad(title,12)
+    local thl = hlist(title,8)
+
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.Text = Name
+    nameLbl.Size = UDim2.new(1,-110,1,0)
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+    nameLbl.Font = Enum.Font.GothamBold
+    nameLbl.TextSize = 18
+    nameLbl.TextColor3 = Theme.Text
+    nameLbl.Parent = title
+
+    local minBtn = Instance.new("TextButton")
+    minBtn.Size = UDim2.fromOffset(32,28)
+    minBtn.Text = "–"
+    minBtn.Font = Enum.Font.GothamBold
+    minBtn.TextSize = 18
+    minBtn.TextColor3 = Theme.Text
+    minBtn.BackgroundColor3 = Theme.Panel
+    minBtn.Parent = title
+    corner(minBtn,8); stroke(minBtn,1)
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.fromOffset(32,28)
+    closeBtn.Text = "x"
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 16
+    closeBtn.TextColor3 = Theme.Text
+    closeBtn.BackgroundColor3 = Theme.Danger
+    closeBtn.Parent = title
+    corner(closeBtn,8)
+
+    -- drag logic
     do
-        local dragging, dragStart, startPos
-        local topBar = Instance.new("TextLabel")
-        topBar.BackgroundTransparency = 1
-        topBar.Text = Name
-        topBar.TextXAlignment = Enum.TextXAlignment.Left
-        topBar.Font = Enum.Font.GothamBold
-        topBar.TextSize = 16
-        topBar.TextColor3 = Theme.Text
-        topBar.Size = UDim2.new(1, -10, 0, 22)
-        topBar.Parent = win
-
-        local hb = Instance.new("Frame")
-        hb.BackgroundTransparency = 1
-        hb.Size = UDim2.new(1,0,0,28)
-        hb.LayoutOrder = -10
-        hb.Parent = win
-
-        local lay = vlist(10); lay.Parent = win
-
-        hb.InputBegan:Connect(function(i)
+        local dragging, start, startPos
+        title.InputBegan:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = true
-                dragStart = i.Position
-                startPos = win.Position
+                dragging = true; start = i.Position; startPos = win.Position
             end
         end)
-        hb.InputEnded:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = false
-            end
+        title.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
         end)
         UIS.InputChanged:Connect(function(i)
             if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
-                local delta = i.Position - dragStart
-                win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                local d = i.Position - start
+                win.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
             end
         end)
     end
 
-    -- Tabs bar
-    local tabBar = Instance.new("Frame")
-    tabBar.BackgroundColor3 = Theme.Panel
-    tabBar.Size = UDim2.new(1, -20, 0, 34)
-    tabBar.Parent = win
-    corner(8).Parent = tabBar
-    stroke(1).Parent = tabBar
-    local tabBarPad = padding(6); tabBarPad.Parent = tabBar
-    local tabList = hlist(6); tabList.Parent = tabBar
+    minBtn.MouseButton1Click:Connect(function() sg.Enabled = not sg.Enabled end)
+    closeBtn.MouseButton1Click:Connect(function() sg:Destroy() end)
 
-    -- Content area
-    local pages = Instance.new("Frame")
-    pages.Size = UDim2.new(1, -20, 1, -34-20-10) -- top bar + margins
-    pages.Position = UDim2.new(0, 10, 0, 34+10)
-    pages.BackgroundTransparency = 1
-    pages.Parent = win
+    -- body (sidebar + content)
+    local body = Instance.new("Frame")
+    body.Size = UDim2.new(1,-20,1,-54)
+    body.Position = UDim2.new(0,10,0,54)
+    body.BackgroundTransparency = 1
+    body.Parent = win
+    local bodyList = hlist(body,10)
 
-    local _openDropdown -- for global close when clicking elsewhere
-    UIS.InputBegan:Connect(function(input, gpe)
+    -- sidebar
+    local side = Instance.new("Frame")
+    side.Size = UDim2.new(0, 220, 1, 0)
+    side.BackgroundColor3 = Theme.Sidebar
+    side.Parent = body
+    corner(side,10); stroke(side,1); pad(side,10)
+    local sideList = vlist(side,8)
+
+    -- profile footer
+    local profile = Instance.new("Frame")
+    profile.Size = UDim2.new(1,0,0,52)
+    profile.BackgroundColor3 = Theme.Panel
+    profile.Parent = side
+    corner(profile,10); stroke(profile,1); pad(profile,10)
+    local ptxt = Instance.new("TextLabel")
+    ptxt.BackgroundTransparency = 1
+    ptxt.TextXAlignment = Enum.TextXAlignment.Left
+    ptxt.Font = Enum.Font.GothamSemibold
+    ptxt.TextSize = 12
+    ptxt.TextColor3 = Theme.Muted
+    ptxt.Text = "@"..LP.Name
+    ptxt.Size = UDim2.new(1,0,1,0)
+    ptxt.Parent = profile
+
+    -- content
+    local content = Instance.new("Frame")
+    content.Size = UDim2.new(1,-(220+10),1,0)
+    content.BackgroundColor3 = Theme.Panel
+    content.Parent = body
+    corner(content,10); stroke(content,1); pad(content,10)
+
+    -- keybind toggle
+    do
+        local key = Enum.KeyCode[string.upper(Keybind)] or Enum.KeyCode.K
+        UIS.InputBegan:Connect(function(i,gpe)
+            if not gpe and i.KeyCode == key then sg.Enabled = not sg.Enabled end
+        end)
+    end
+
+    local state = { _flags = {} }
+    function state:Save()
+        if not doSave then return end
+        if not isfolder(folder) then pcall(makefolder, folder) end
+        writeJSON(("%s/%s.json"):format(folder,file), self._flags)
+    end
+    function state:Load()
+        if not doSave then return end
+        local data = readJSON(("%s/%s.json"):format(folder,file))
+        if type(data)=="table" then for k,v in pairs(data) do self._flags[k]=v end end
+    end
+
+    -- global dropdown closer
+    local openDrop
+    UIS.InputBegan:Connect(function(input,gpe)
         if gpe then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if _openDropdown and _openDropdown._closeIfOutside then
-                _openDropdown:_closeIfOutside()
-            end
+            if openDrop and openDrop._close then openDrop:_close() end
         end
     end)
 
-    -- Keybind to toggle
-    do
-        local open = true
-        local key = Enum.KeyCode[string.upper(Keybind)] or Enum.KeyCode.K
-        UIS.InputBegan:Connect(function(i, gpe)
-            if gpe then return end
-            if i.KeyCode == key then
-                open = not open
-                sg.Enabled = open
-            end
-        end)
-    end
-
     local window = {
-        _gui = sg,
-        _root = win,
-        _pages = pages,
-        _tabBar = tabBar,
-        _flags = {},
-        SaveConfiguration = function(self)
-            if not doSave then return end
-            pcall(function()
-                if not isfolder(FolderName) then makefolder(FolderName) end
-            end)
-            local path = string.format("%s/%s.json", FolderName, FileName)
-            writeJSON(path, self._flags)
-        end,
-        LoadConfiguration = function(self)
-            if not doSave then return end
-            local path = string.format("%s/%s.json", FolderName, FileName)
-            if isfile and isfile(path) then
-                local data = readJSON(path)
-                if type(data) == "table" then
-                    for k,v in pairs(data) do self._flags[k] = v end
-                end
-            end
-        end
+        _root = win, _side = side, _content = content, _state = state, _openDrop = function(d) openDrop=d end
     }
 
-    -- Tabs
+    -- TAB API (vertical)
     function window:CreateTab(title)
-        title = title or "Tab"
-        local btn = mkSmallBtn(title)
-        btn.Size = UDim2.new(0, 120, 1, -12)
-        btn.BackgroundColor3 = Theme.Accent
-        btn.Parent = self._tabBar
+        local tabBtn = Instance.new("TextButton")
+        tabBtn.Size = UDim2.new(1,0,0,34)
+        tabBtn.Text = title or "Tab"
+        tabBtn.Font = Enum.Font.Gotham
+        tabBtn.TextSize = 14
+        tabBtn.TextColor3 = Theme.Text
+        tabBtn.BackgroundColor3 = Theme.Panel
+        tabBtn.Parent = side
+        corner(tabBtn,8); stroke(tabBtn,1)
 
         local page = Instance.new("ScrollingFrame")
-        page.BackgroundColor3 = Theme.Panel
-        page.BorderSizePixel = 0
         page.Size = UDim2.new(1,0,1,0)
         page.CanvasSize = UDim2.new(0,0,0,0)
         page.ScrollBarThickness = 6
+        page.BackgroundTransparency = 1
         page.Visible = false
-        page.Parent = self._pages
-        corner(8).Parent = page
-        stroke(1).Parent = page
-        padding(10).Parent = page
-        local list = vlist(10); list.Parent = page
+        page.Parent = content
 
+        local inner = Instance.new("Frame")
+        inner.BackgroundTransparency = 1
+        inner.Size = UDim2.new(1, -4, 0, 0)
+        inner.Parent = page
+        pad(inner,2)
+        local il = vlist(inner,10)
+
+        -- autosize canvas
         local function updateCanvas()
-            local abs = 0
-            for _,ch in ipairs(page:GetChildren()) do
-                if ch:IsA("UIListLayout") then
-                    -- ignore
-                elseif ch:IsA("Frame") or ch:IsA("TextLabel") then
-                    abs += ch.AbsoluteSize.Y + 10
-                end
-            end
-            page.CanvasSize = UDim2.new(0,0,0,abs+10)
+            page.CanvasSize = UDim2.new(0,0,0, il.AbsoluteContentSize.Y + 12)
         end
-        page.ChildAdded:Connect(updateCanvas); page.ChildRemoved:Connect(updateCanvas)
+        il:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
+        updateCanvas()
 
-        local tab = { _window = self, _page = page }
-
-        function tab:Show()
-            for _,p in ipairs(self._window._pages:GetChildren()) do
-                if p:IsA("ScrollingFrame") then p.Visible = false end
+        local function activate()
+            for _,b in ipairs(side:GetChildren()) do
+                if b:IsA("TextButton") then b.BackgroundColor3 = Theme.Panel end
             end
+            for _,p in ipairs(content:GetChildren()) do
+                if p:IsA("ScrollingFrame") then p.Visible=false end
+            end
+            tabBtn.BackgroundColor3 = Theme.Accent
             page.Visible = true
-            for _,b in ipairs(self._window._tabBar:GetChildren()) do
-                if b:IsA("TextButton") then b.BackgroundColor3 = Theme.Panel; b.TextColor3 = Theme.Text end
-            end
-            btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Theme.Text
         end
+        tabBtn.MouseButton1Click:Connect(activate)
+        if #content:GetChildren() == 1 then activate() end
 
-        btn.MouseButton1Click:Connect(function() tab:Show() end)
-        if #self._tabBar:GetChildren() <= 2 then
-            -- first tab
-            tab:Show()
-        end
+        local tab = { _win = window, _page = page, _inner = inner }
 
-        -- Section factory
+        -- Section
         function tab:CreateSection(title2)
             local sec = Instance.new("Frame")
             sec.BackgroundColor3 = Theme.BG
-            sec.Size = UDim2.new(1, -4, 0, 20)
-            sec.Parent = page
-            corner(10).Parent = sec
-            stroke(1).Parent = sec
-            padding(10).Parent = sec
-            local layout = vlist(8); layout.Parent = sec
+            sec.AutomaticSize = Enum.AutomaticSize.Y
+            sec.Size = UDim2.new(1,0,0,10)
+            sec.Parent = inner
+            corner(sec,10); stroke(sec,1); pad(sec,10)
+            local sl = vlist(sec,8)
 
-            if title2 and title2 ~= "" then
-                local lbl = Instance.new("TextLabel")
-                lbl.BackgroundTransparency = 1
-                lbl.Text = title2
-                lbl.TextXAlignment = Enum.TextXAlignment.Left
-                lbl.Font = Enum.Font.GothamBold
-                lbl.TextSize = 14
-                lbl.TextColor3 = Theme.Muted
-                lbl.Size = UDim2.new(1,0,0,16)
-                lbl.Parent = sec
+            if title2 and title2~="" then
+                local tl = Instance.new("TextLabel")
+                tl.BackgroundTransparency = 1
+                tl.TextXAlignment = Enum.TextXAlignment.Left
+                tl.Font = Enum.Font.GothamSemibold
+                tl.TextSize = 14
+                tl.TextColor3 = Theme.Muted
+                tl.Text = title2
+                tl.Size = UDim2.new(1,0,0,16)
+                tl.Parent = sec
             end
 
-            local section = { _window = self._window, _tab = self, _sec = sec }
+            local section = { _sec = sec, _win = window }
 
             -- Label
             function section:CreateLabel(text)
@@ -333,122 +281,88 @@ function IkanTongkol:CreateWindow(cfg)
                 l.TextColor3 = Theme.Text
                 l.Size = UDim2.new(1,0,0,34)
                 l.Parent = sec
-                corner(8).Parent = l
-                stroke(1).Parent = l
-                padding(8).Parent = l
-                local api = { Set = function(_, t) l.Text = t end }
-                return api
+                corner(l,8); stroke(l,1); pad(l,10)
+                return { Set=function(_,t) l.Text=t end }
             end
 
             -- Button
-            function section:CreateButton(props)
-                props = props or {}
-                local name = props.Name or "Button"
-                local cb = props.Callback
-                local row = Instance.new("Frame")
-                row.BackgroundTransparency = 1
-                row.Size = UDim2.new(1,0,0,34)
-                row.Parent = sec
-                local hl = hlist(8); hl.Parent = row
-
-                local b = mkBtn(name, 34)
-                b.Size = UDim2.new(1,0,1,0)
-                b.Parent = row
-                b.MouseButton1Click:Connect(function() safe(cb) end)
-
-                return {
-                    SetName = function(_, n) b.Text = tostring(n) end,
-                    Click = function(_) safe(cb) end
-                }
+            function section:CreateButton(p)
+                p=p or {}
+                local b = Instance.new("TextButton")
+                b.Size = UDim2.new(1,0,0,36)
+                b.Text = p.Name or "Button"
+                b.Font = Enum.Font.GothamSemibold
+                b.TextSize = 14
+                b.TextColor3 = Theme.Text
+                b.BackgroundColor3 = Theme.Accent
+                b.Parent = sec
+                corner(b,8); stroke(b,1,Color3.new(),0.2)
+                b.MouseButton1Click:Connect(function() safe(p.Callback) end)
+                return { SetName=function(_,t) b.Text=t end, Click=function() safe(p.Callback) end }
             end
 
             -- Toggle
-            function section:CreateToggle(props)
-                props = props or {}
-                local name = props.Name or "Toggle"
-                local flag = props.Flag
-                local v = props.CurrentValue and true or false
-                if flag and self._window._flags[flag] ~= nil then
-                    v = self._window._flags[flag] and true or false
-                end
-                local cb = props.Callback
+            function section:CreateToggle(p)
+                p=p or {}
+                local v = p.CurrentValue and true or false
+                local flag = p.Flag
+                if flag and window._state._flags[flag]~=nil then v = window._state._flags[flag] and true or false end
 
-                local holder = Instance.new("Frame")
-                holder.BackgroundColor3 = Theme.Panel
-                holder.Size = UDim2.new(1,0,0,44)
-                holder.Parent = sec
-                corner(8).Parent = holder
-                stroke(1).Parent = holder
-                padding(10).Parent = holder
-                local hl = hlist(8); hl.Parent = holder
+                local row = Instance.new("Frame")
+                row.Size = UDim2.new(1,0,0,46)
+                row.BackgroundColor3 = Theme.Panel
+                row.Parent = sec
+                corner(row,8); stroke(row,1); pad(row,12)
+                local hl = hlist(row,8)
 
                 local lbl = Instance.new("TextLabel")
+                lbl.Size = UDim2.new(1,-70,1,0)
                 lbl.BackgroundTransparency = 1
+                lbl.Text = p.Name or "Toggle"
                 lbl.TextXAlignment = Enum.TextXAlignment.Left
-                lbl.Text = name
                 lbl.Font = Enum.Font.Gotham
                 lbl.TextSize = 14
                 lbl.TextColor3 = Theme.Text
-                lbl.Size = UDim2.new(1,-60,1,0)
-                lbl.Parent = holder
+                lbl.Parent = row
 
                 local sw = Instance.new("TextButton")
-                sw.AutoButtonColor = false
-                sw.Size = UDim2.new(0, 48, 0, 24)
+                sw.Size = UDim2.fromOffset(52,24)
                 sw.Text = ""
-                sw.BackgroundColor3 = v and Theme.Success or Theme.BG
-                sw.Parent = holder
-                corner(12).Parent = sw
-                stroke(1).Parent = sw
+                sw.BackgroundColor3 = v and Theme.Good or Theme.BG
+                sw.Parent = row
+                corner(sw,12); stroke(sw,1)
 
                 local knob = Instance.new("Frame")
-                knob.Size = UDim2.new(0, 20, 0, 20)
+                knob.Size = UDim2.fromOffset(20,20)
                 knob.Position = v and UDim2.new(1,-22,0,2) or UDim2.new(0,2,0,2)
                 knob.BackgroundColor3 = Theme.Panel
                 knob.Parent = sw
-                corner(10).Parent = knob
-                stroke(1).Parent = knob
+                corner(knob,10); stroke(knob,1)
 
                 local function apply(val)
                     v = val and true or false
-                    sw.BackgroundColor3 = v and Theme.Success or Theme.BG
+                    sw.BackgroundColor3 = v and Theme.Good or Theme.BG
                     knob:TweenPosition(v and UDim2.new(1,-22,0,2) or UDim2.new(0,2,0,2), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.12, true)
-                    if flag then section._window._flags[flag] = v; section._window:SaveConfiguration() end
-                    safe(cb, v)
+                    if flag then window._state._flags[flag]=v; window._state:Save() end
+                    safe(p.Callback, v)
                 end
                 sw.MouseButton1Click:Connect(function() apply(not v) end)
                 apply(v)
-
-                return {
-                    Set = function(_, val) apply(val) end,
-                    Get = function() return v end
-                }
+                return { Set=function(_,x) apply(x) end, Get=function() return v end }
             end
 
-            -- Input (single-line)
-            function section:CreateInput(props)
-                props = props or {}
-                local flag        = props.Flag
-                local name        = props.Name or "Input"
-                local placeholder = props.PlaceholderText or "Type here..."
-                local current     = tostring(props.CurrentValue or (flag and (self._window._flags[flag] or "") ) or "")
-                local numeric     = props.Numeric == true
-                local minv        = (type(props.Min) == "number") and props.Min or -math.huge
-                local maxv        = (type(props.Max) == "number") and props.Max or  math.huge
-                local maxlen      = tonumber(props.MaxLength) or 128
-                local live        = props.Live == true
-                local onEnterOnly = props.OnEnter == true
-                local removeAfter = props.RemoveTextAfterFocusLost == true
-                local cb          = props.Callback
-
+            -- Input
+            function section:CreateInput(p)
+                p=p or {}
+                local numeric = p.Numeric==true
+                local flag = p.Flag
+                local txt = ((flag and window._state._flags[flag]) ~= nil) and tostring(window._state._flags[flag]) or tostring(p.CurrentValue or "")
                 local holder = Instance.new("Frame")
+                holder.Size = UDim2.new(1,0,0,70)
                 holder.BackgroundColor3 = Theme.Panel
-                holder.Size = UDim2.new(1,0,0,64)
                 holder.Parent = sec
-                corner(8).Parent = holder
-                stroke(1).Parent = holder
-                padding(8).Parent = holder
-                vlist(6).Parent = holder
+                corner(holder,8); stroke(holder,1); pad(holder,10)
+                vlist(holder,8)
 
                 local nameLbl = Instance.new("TextLabel")
                 nameLbl.BackgroundTransparency = 1
@@ -456,410 +370,115 @@ function IkanTongkol:CreateWindow(cfg)
                 nameLbl.Font = Enum.Font.GothamSemibold
                 nameLbl.TextSize = 13
                 nameLbl.TextColor3 = Theme.Muted
+                nameLbl.Text = p.Name or "Input"
                 nameLbl.Size = UDim2.new(1,0,0,14)
-                nameLbl.Text = name
                 nameLbl.Parent = holder
 
                 local row = Instance.new("Frame")
                 row.BackgroundTransparency = 1
                 row.Size = UDim2.new(1,0,0,36)
                 row.Parent = holder
-                local hl = hlist(6); hl.Parent = row
+                local hl=hlist(row,8)
 
                 local box = Instance.new("TextBox")
                 box.Size = UDim2.new(1,-34,1,0)
-                box.ClearTextOnFocus = false
-                box.PlaceholderText = placeholder
-                box.Text = current
+                box.Text = txt
+                box.PlaceholderText = p.PlaceholderText or ""
                 box.Font = Enum.Font.Gotham
                 box.TextSize = 14
                 box.TextColor3 = Theme.Text
                 box.PlaceholderColor3 = Theme.Muted
                 box.BackgroundColor3 = Theme.BG
+                box.ClearTextOnFocus = false
                 box.Parent = row
-                corner(8).Parent = box
-                stroke(1).Parent = box
+                corner(box,8); stroke(box,1)
 
-                local clearBtn = mkSmallBtn("×")
-                clearBtn.Size = UDim2.fromOffset(28,28)
-                clearBtn.Parent = row
+                local clear = Instance.new("TextButton")
+                clear.Text = "×"
+                clear.Font = Enum.Font.GothamBold
+                clear.TextSize = 16
+                clear.TextColor3 = Theme.Text
+                clear.Size = UDim2.fromOffset(28,28)
+                clear.BackgroundColor3 = Theme.Panel
+                clear.Parent = row
+                corner(clear,8); stroke(clear,1)
 
-                local function saveFlag(val)
-                    if not flag then return end
-                    section._window._flags[flag] = val
-                    section._window:SaveConfiguration()
-                end
-
-                local function sanitizeNumeric(s)
-                    s = tostring(s or ""):gsub("[^%d%.-]", "")
-                    local neg = s:sub(1,1) == "-"
-                    s = s:gsub("-", "")
-                    local dot = s:find("%.")
-                    if dot then s = s:sub(1,dot) .. s:sub(dot+1):gsub("%.", "") end
-                    if neg then s = "-"..s end
-                    if #s > maxlen then s = s:sub(1,maxlen) end
-                    return s
-                end
-                local function sanitizeText(s)
-                    s = tostring(s or "")
-                    if #s > maxlen then s = s:sub(1,maxlen) end
-                    return s
-                end
-
-                local function getValue()
+                local function sanitize()
                     if numeric then
-                        local s = sanitizeNumeric(box.Text)
-                        local n = tonumber(s)
-                        if not n then return nil, "" end
-                        n = math.clamp(n, minv, maxv)
-                        return n, tostring(n)
-                    else
-                        local s = sanitizeText(box.Text)
-                        return s, s
+                        local s = box.Text:gsub("[^%d%.-]", "")
+                        local neg = s:sub(1,1)=="-"; s=s:gsub("-", "")
+                        local dot = s:find("%."); if dot then s = s:sub(1,dot)..s:sub(dot+1):gsub("%.","") end
+                        if neg then s="- "..s; s=s:gsub("- ","-") end
+                        box.Text = (#s>0 and s or "0")
                     end
                 end
-
-                local function fire()
-                    if not cb then return end
-                    local n, s = getValue()
-                    if numeric then if n ~= nil then safe(cb, n) end
-                    else safe(cb, s) end
-                end
-
                 box:GetPropertyChangedSignal("Text"):Connect(function()
-                    if numeric then
-                        local clean = sanitizeNumeric(box.Text)
-                        if clean ~= box.Text then
-                            local pos = box.CursorPosition
-                            box.Text = clean; box.CursorPosition = math.clamp(pos-1,1,#box.Text+1)
-                        end
-                    else
-                        if #box.Text > maxlen then
-                            box.Text = box.Text:sub(1,maxlen)
-                            box.CursorPosition = #box.Text+1
-                        end
-                    end
-                    if live then saveFlag(box.Text); fire() end
+                    if numeric then sanitize() end
                 end)
-
-                box.FocusLost:Connect(function(enter)
-                    if numeric then
-                        local n, s = getValue()
-                        if n == nil then n, s = 0, "0" end
-                        box.Text = s
-                    else
-                        box.Text = sanitizeText(box.Text)
-                    end
-                    saveFlag(box.Text)
-                    if (onEnterOnly and enter) or (not onEnterOnly) then fire() end
-                    if removeAfter then box.Text = "" end
+                box.FocusLost:Connect(function()
+                    if flag then window._state._flags[flag]=box.Text; window._state:Save() end
+                    safe(p.Callback, numeric and tonumber(box.Text) or box.Text)
                 end)
+                clear.MouseButton1Click:Connect(function() box.Text="" end)
 
-                clearBtn.MouseButton1Click:Connect(function()
-                    box.Text = ""
-                    saveFlag("")
-                    if live then fire() end
-                end)
-
-                -- init
-                saveFlag(box.Text)
-
-                return {
-                    Set = function(_, val)
-                        local s = tostring(val or "")
-                        if numeric then
-                            s = sanitizeNumeric(s); if s == "" then s = "0" end
-                        else
-                            s = sanitizeText(s)
-                        end
-                        box.Text = s; saveFlag(s); if live then fire() end
-                    end,
-                    Get = function()
-                        if numeric then return tonumber(box.Text) end
-                        return box.Text
-                    end,
-                    Focus = function() box:CaptureFocus() end,
-                    Blur = function() box:ReleaseFocus() end,
-                }
+                return { Set=function(_,v) box.Text=tostring(v or "") end, Get=function() return numeric and tonumber(box.Text) or box.Text end }
             end
 
-            -- Dropdown (single / multi) + Search
-            function section:CreateDropdown(props)
-                props = props or {}
-                local name = props.Name or "Dropdown"
-                local options = props.Options or {}
-                local flag = props.Flag
-                local multi = props.MultiSelection == true
-                local searchable = props.Searchable == true
-                local current = props.CurrentOption or (multi and {}) or ""
-                if flag and self._window._flags[flag] ~= nil then
-                    current = self._window._flags[flag]
-                end
-                local cb = props.Callback
+            -- Dropdown (single/multi) + search; popup ke ScreenGui
+            function section:CreateDropdown(p)
+                p=p or {}
+                local options = p.Options or {}
+                local multi = p.MultiSelection==true
+                local flag  = p.Flag
+                local value = p.CurrentOption or (multi and {} or "")
+                if flag and window._state._flags[flag]~=nil then value = window._state._flags[flag] end
 
-                -- holder
                 local holder = Instance.new("Frame")
+                holder.Size = UDim2.new(1,0,0, (p.Searchable and 98 or 68))
                 holder.BackgroundColor3 = Theme.Panel
-                holder.Size = UDim2.new(1,0,0, (searchable and 94 or 64))
                 holder.Parent = sec
-                corner(8).Parent = holder
-                stroke(1).Parent = holder
-                padding(8).Parent = holder
-                vlist(6).Parent = holder
+                corner(holder,8); stroke(holder,1); pad(holder,10)
+                vlist(holder,8)
 
-                local nameLbl = Instance.new("TextLabel")
-                nameLbl.BackgroundTransparency = 1
-                nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-                nameLbl.Font = Enum.Font.GothamSemibold
-                nameLbl.TextSize = 13
-                nameLbl.TextColor3 = Theme.Muted
-                nameLbl.Size = UDim2.new(1,0,0,14)
-                nameLbl.Text = name
-                nameLbl.Parent = holder
-
-                local head = Instance.new("TextButton")
-                head.AutoButtonColor = true
-                head.Text = ""
-                head.Size = UDim2.new(1,0,0,36)
-                head.BackgroundColor3 = Theme.BG
-                head.Parent = holder
-                corner(8).Parent = head
-                stroke(1).Parent = head
-
-                local hl = hlist(8); hl.Parent = head
                 local title = Instance.new("TextLabel")
                 title.BackgroundTransparency = 1
                 title.TextXAlignment = Enum.TextXAlignment.Left
-                title.Size = UDim2.new(1,-36,1,0)
-                title.Font = Enum.Font.Gotham
-                title.TextSize = 14
-                title.TextColor3 = Theme.Text
-                title.Text = multi and ((type(current)=="table" and #current>0) and table.concat(current,", ") or "None") or (tostring(current)~="" and tostring(current) or "None")
-                title.Parent = head
+                title.Font = Enum.Font.GothamSemibold
+                title.TextSize = 13
+                title.TextColor3 = Theme.Muted
+                title.Text = p.Name or "Dropdown"
+                title.Size = UDim2.new(1,0,0,14)
+                title.Parent = holder
 
+                local head = Instance.new("TextButton")
+                head.Size = UDim2.new(1,0,0,36)
+                head.BackgroundColor3 = Theme.BG
+                head.Text = ""
+                head.Parent = holder
+                corner(head,8); stroke(head,1)
+                pad(head,10); hlist(head,6)
+
+                local txt = Instance.new("TextLabel")
+                txt.Size = UDim2.new(1,-26,1,0)
+                txt.BackgroundTransparency = 1
+                txt.TextXAlignment = Enum.TextXAlignment.Left
+                txt.Font = Enum.Font.Gotham
+                txt.TextSize = 14
+                txt.TextColor3 = Theme.Text
+                txt.Text = (multi and (#(value or {})>0 and table.concat(value,", ") or "None")) or (tostring(value)~="" and tostring(value) or "None")
+                txt.Parent = head
                 local arrow = Instance.new("TextLabel")
+                arrow.Size = UDim2.fromOffset(20,20)
                 arrow.BackgroundTransparency = 1
+                arrow.Text = "▾"
                 arrow.Font = Enum.Font.GothamBold
                 arrow.TextSize = 16
                 arrow.TextColor3 = Theme.Muted
-                arrow.Text = "▾"
-                arrow.Size = UDim2.fromOffset(26,26)
                 arrow.Parent = head
 
-                -- popup list
-                local popup = Instance.new("Frame")
-                popup.BackgroundColor3 = Theme.Panel
-                popup.Size = UDim2.new(1,0,0, 160 + (searchable and 32 or 0))
-                popup.Position = UDim2.new(0,0,0, holder.AbsolutePosition.Y + holder.AbsoluteSize.Y)
-                popup.Visible = false
-                popup.Parent = holder
-                popup.ZIndex = 50
-                corner(8).Parent = popup
-                stroke(1).Parent = popup
-                padding(8).Parent = popup
-                vlist(6).Parent = popup
-
+                local popup -- parent to ScreenGui
                 local searchBox
-                if searchable then
-                    searchBox = Instance.new("TextBox")
-                    searchBox.Size = UDim2.new(1,0,0,28)
-                    searchBox.PlaceholderText = "Search..."
-                    searchBox.Text = ""
-                    searchBox.Font = Enum.Font.Gotham
-                    searchBox.TextSize = 14
-                    searchBox.TextColor3 = Theme.Text
-                    searchBox.PlaceholderColor3 = Theme.Muted
-                    searchBox.BackgroundColor3 = Theme.BG
-                    searchBox.Parent = popup
-                    corner(8).Parent = searchBox
-                    stroke(1).Parent = searchBox
-                end
-
-                local buttonsRow
-                if multi then
-                    buttonsRow = Instance.new("Frame")
-                    buttonsRow.BackgroundTransparency = 1
-                    buttonsRow.Size = UDim2.new(1,0,0,28)
-                    buttonsRow.Parent = popup
-                    local hl2 = hlist(6); hl2.Parent = buttonsRow
-                    local allB = mkSmallBtn("Select All"); allB.Parent = buttonsRow
-                    local clrB = mkSmallBtn("Clear"); clrB.Parent = buttonsRow
-                    allB.Size = UDim2.fromOffset(90,28)
-                    clrB.Size = UDim2.fromOffset(70,28)
-                    allB.MouseButton1Click:Connect(function()
-                        current = table.clone(options)
-                        title.Text = table.concat(current, ", ")
-                        safe(cb, current)
-                        if flag then section._window._flags[flag] = current; section._window:SaveConfiguration() end
-                        refresh()
-                    end)
-                    clrB.MouseButton1Click:Connect(function()
-                        current = {}
-                        title.Text = "None"
-                        safe(cb, current)
-                        if flag then section._window._flags[flag] = current; section._window:SaveConfiguration() end
-                        refresh()
-                    end)
-                end
-
-                local listFrame = Instance.new("ScrollingFrame")
-                listFrame.Size = UDim2.new(1,0,1,-(multi and 28 or 0) - (searchable and 36 or 0))
-                listFrame.BackgroundColor3 = Theme.BG
-                listFrame.ScrollBarThickness = 6
-                listFrame.CanvasSize = UDim2.new(0,0,0,0)
-                listFrame.Parent = popup
-                corner(8).Parent = listFrame
-                stroke(1).Parent = listFrame
-                padding(6).Parent = listFrame
-                local lyl = vlist(6); lyl.Parent = listFrame
-
                 local itemButtons = {}
 
-                local function setCanvas()
-                    local total = 0
-                    for _,ch in ipairs(listFrame:GetChildren()) do
-                        if ch:IsA("TextButton") then total += ch.AbsoluteSize.Y + 6 end
-                    end
-                    listFrame.CanvasSize = UDim2.new(0,0,0,total+12)
-                end
-
-                local function isSelected(opt)
-                    if multi then
-                        for _,v in ipairs(current) do if tostring(v) == tostring(opt) then return true end end
-                        return false
-                    else
-                        return tostring(current) == tostring(opt)
-                    end
-                end
-
-                local function rebuild(filter)
-                    for _,b in ipairs(itemButtons) do b:Destroy() end
-                    table.clear(itemButtons)
-                    local fl = string.lower(tostring(filter or ""))
-
-                    for _,opt in ipairs(options) do
-                        local show = true
-                        if fl ~= "" then
-                            show = string.find(string.lower(opt), fl, 1, true) ~= nil
-                        end
-                        if show then
-                            local b = Instance.new("TextButton")
-                            b.BackgroundColor3 = Theme.Panel
-                            b.Size = UDim2.new(1,0,0,28)
-                            b.AutoButtonColor = true
-                            b.TextXAlignment = Enum.TextXAlignment.Left
-                            b.Text = (multi and (isSelected(opt) and "✓ " or "  ")) .. tostring(opt)
-                            b.Font = Enum.Font.Gotham
-                            b.TextSize = 14
-                            b.TextColor3 = Theme.Text
-                            b.Parent = listFrame
-                            corner(6).Parent = b
-                            stroke(1).Parent = b
-
-                            b.MouseButton1Click:Connect(function()
-                                if multi then
-                                    if isSelected(opt) then
-                                        -- remove
-                                        local tmp = {}
-                                        for _,v in ipairs(current) do if tostring(v) ~= tostring(opt) then table.insert(tmp, v) end end
-                                        current = tmp
-                                    else
-                                        table.insert(current, opt)
-                                    end
-                                    title.Text = (#current>0) and table.concat(current, ", ") or "None"
-                                    if flag then section._window._flags[flag] = current; section._window:SaveConfiguration() end
-                                    safe(cb, current)
-                                    rebuild(searchable and searchBox.Text or "")
-                                else
-                                    current = opt
-                                    title.Text = tostring(current)
-                                    if flag then section._window._flags[flag] = current; section._window:SaveConfiguration() end
-                                    safe(cb, current)
-                                    popup.Visible = false
-                                end
-                            end)
-
-                            table.insert(itemButtons, b)
-                        end
-                    end
-                    setCanvas()
-                end
-
-                if searchable then
-                    searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-                        rebuild(searchBox.Text)
-                    end)
-                end
-
-                local function open()
-                    popup.Position = UDim2.new(0,0,0, holder.AbsoluteSize.Y + 6)
-                    popup.Visible = true
-                    if searchable then searchBox:CaptureFocus() end
-                    -- register global closer
-                    section._window._openDropdown = { _frame = popup }
-                    _openDropdown = {
-                        _closeIfOutside = function(obj)
-                            -- close if clicked outside popup/head/holder
-                            local mp = UIS:GetMouseLocation()
-                            local absPos = popup.AbsolutePosition
-                            local absSize = popup.AbsoluteSize
-                            local within = (mp.X >= absPos.X and mp.X <= absPos.X + absSize.X and mp.Y >= absPos.Y and mp.Y <= absPos.Y + absSize.Y)
-                            local hpos, hsize = head.AbsolutePosition, head.AbsoluteSize
-                            local withinHead = (mp.X >= hpos.X and mp.X <= hpos.X + hsize.X and mp.Y >= hpos.Y and mp.Y <= hpos.Y + hsize.Y)
-                            if not within and not withinHead then
-                                popup.Visible = false
-                                _openDropdown = nil
-                            end
-                        end
-                    }
-                end
-
-                local function close()
-                    popup.Visible = false
-                    if _openDropdown then _openDropdown = nil end
-                end
-
-                head.MouseButton1Click:Connect(function()
-                    if popup.Visible then close() else open() end
-                end)
-
-                -- public modifiers
-                local api = {}
-                function api:Refresh(newOptions)
-                    options = newOptions or options
-                    rebuild(searchable and searchBox and searchBox.Text or "")
-                end
-                function api:Set(val)
-                    if multi then
-                        current = table.clone(val or {})
-                        title.Text = (#current>0) and table.concat(current,", ") or "None"
-                        safe(cb, current)
-                        if flag then section._window._flags[flag] = current; section._window:SaveConfiguration() end
-                        rebuild(searchable and searchBox and searchBox.Text or "")
-                    else
-                        current = tostring(val or "")
-                        title.Text = current ~= "" and current or "None"
-                        safe(cb, current)
-                        if flag then section._window._flags[flag] = current; section._window:SaveConfiguration() end
-                    end
-                end
-                function api:Get()
-                    return current
-                end
-
-                -- init
-                rebuild(nil)
-
-                return api
-            end
-
-            return section
-        end
-
-        return tab
-    end
-
-    return window
-end
-
-return IkanTongkol
+                local function isSel(opt)
+                    if multi then for _,v in ipairs(value) do i
