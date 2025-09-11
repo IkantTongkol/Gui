@@ -1,0 +1,768 @@
+--[[
+Orionlike Roblox UI — ModuleScript (API Orion 1:1)
+
+Tujuan: Menyediakan API & nama fungsi yang *sepadan* (1:1) dengan Orion Library yang umum dipakai,
+namun implementasi UI murni Roblox (bukan salinan kode Orion). API yang dicakup:
+
+OrionLib:MakeWindow(opts|name[, extraOpts])
+OrionLib:Init()
+OrionLib:Destroy()
+OrionLib:MakeNotification({Name, Content, Image, Time})
+OrionLib.Flags[flag] -> {Value, Set(v), Get()}
+
+Window:MakeTab({Name, Icon, PremiumOnly})
+Tab:AddSection({Name})
+Tab:AddParagraph(title, content) *atau* Tab:AddParagraph({Title, Content}) -> {Set({Title, Content})}
+Tab:AddLabel(text) *atau* Tab:AddLabel({Name=text}) -> {Set(text)}
+Tab:AddButton({Name, Callback})
+Tab:AddToggle({Name, Default, Color?, Flag?, Info?, Callback}) -> {Set(v)}
+Tab:AddSlider({Name, Min, Max, Default, Increment, Color?, Flag?, ValueName?, Callback}) -> {Set(v)}
+Tab:AddDropdown({Name, Default, Options, Flag?, Callback}) -> {Set(v), Add(opt), Remove(opt)}
+Tab:AddTextbox({Name, Default, TextDisappear, Callback}) -> {Set(text)}
+Tab:AddColorpicker({Name, Default, Flag?, Callback}) -> {Set(color3)}
+Tab:AddBind({Name, Default(KeyCode), Hold, Flag?, Callback}) -> {Set(keycode)}
+
+Catatan: Opsi SaveConfig/ConfigFolder diterima agar kompatibel, namun penyimpanan persisten
+lintas sesi belum diaktifkan (stub aman untuk Studio). Flags bekerja penuh di memori runtime.
+--]]
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local Orion = {}
+Orion.__index = Orion
+
+-- =====================================================
+-- THEME
+-- =====================================================
+local Theme = {
+  Accent = Color3.fromRGB(0,170,255),
+  Bg     = Color3.fromRGB(18,19,24),
+  Panel  = Color3.fromRGB(26,28,34),
+  Panel2 = Color3.fromRGB(23,24,30),
+  Stroke = Color3.fromRGB(60,62,70),
+  Text   = Color3.fromRGB(235,238,245),
+  TextDim= Color3.fromRGB(170,178,190),
+}
+
+local function corner(inst, r)
+  local c = Instance.new("UICorner")
+  c.CornerRadius = UDim.new(0, r or 10)
+  c.Parent = inst
+  return c
+end
+local function stroke(inst, tr, col)
+  local s = Instance.new("UIStroke")
+  s.Color = col or Theme.Stroke
+  s.Thickness = 1
+  s.Transparency = tr or 0.4
+  s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+  s.Parent = inst
+  return s
+end
+local function pad(inst, p)
+  local pd = Instance.new("UIPadding")
+  pd.PaddingTop = UDim.new(0, p or 8)
+  pd.PaddingBottom = UDim.new(0, p or 8)
+  pd.PaddingLeft = UDim.new(0, 12)
+  pd.PaddingRight = UDim.new(0, 12)
+  pd.Parent = inst
+  return pd
+end
+
+local function ensureGui()
+  local p = Players.LocalPlayer:WaitForChild("PlayerGui")
+  local gui = p:FindFirstChild("OrionlikeRoot")
+  if not gui then
+    gui = Instance.new("ScreenGui")
+    gui.Name = "OrionlikeRoot"
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.IgnoreGuiInset = true
+    gui.Parent = p
+  end
+  return gui
+end
+
+-- =====================================================
+-- FLAGS / CONFIG (in-memory)
+-- =====================================================
+local function makeFlagTable(lib)
+  lib.Flags = lib.Flags or {}
+  return lib.Flags
+end
+local function attachFlag(lib, flagName, setter, getter, initial)
+  if not flagName then return end
+  local flags = makeFlagTable(lib)
+  if not flags[flagName] then
+    flags[flagName] = {
+      Value = initial,
+      Set = function(v) setter(v) end,
+      Get = function() return getter() end,
+    }
+  end
+end
+
+-- =====================================================
+-- TOAST NOTIFICATIONS
+-- =====================================================
+local ToastRoot
+local function getToastRoot(gui)
+  if ToastRoot and ToastRoot.Parent then return ToastRoot end
+  local r = Instance.new("Frame")
+  r.Name = "ToastRoot"
+  r.BackgroundTransparency = 1
+  r.AnchorPoint = Vector2.new(1,1)
+  r.Position = UDim2.new(1, -12, 1, -12)
+  r.Size = UDim2.fromOffset(1,1)
+  r.Parent = gui
+  ToastRoot = r
+  return r
+end
+
+function Orion:MakeNotification(d)
+  d = d or {}
+  local gui = ensureGui()
+  local root = getToastRoot(gui)
+  local toast = Instance.new("Frame")
+  toast.AnchorPoint = Vector2.new(1,1)
+  toast.Position = UDim2.new(1, 0, 1, 0)
+  toast.Size = UDim2.fromOffset(300, 40)
+  toast.BackgroundColor3 = Theme.Panel
+  toast.BackgroundTransparency = 0.05
+  corner(toast, 8); stroke(toast, 0.5); pad(toast, 6)
+  toast.Parent = root
+
+  local img = Instance.new("ImageLabel")
+  img.BackgroundTransparency = 1
+  img.Position = UDim2.fromOffset(8, 8)
+  img.Size = UDim2.fromOffset(24, 24)
+  img.Image = d.Image or ""
+  img.ImageColor3 = Theme.Accent
+  img.Parent = toast
+
+  local title = Instance.new("TextLabel")
+  title.BackgroundTransparency = 1
+  title.Position = UDim2.fromOffset(40, 6)
+  title.Size = UDim2.fromOffset(240, 14)
+  title.Font = Enum.Font.GothamMedium
+  title.TextSize = 12
+  title.TextXAlignment = Enum.TextXAlignment.Left
+  title.TextColor3 = Theme.Text
+  title.Text = d.Name or "Info"
+  title.Parent = toast
+
+  local body = Instance.new("TextLabel")
+  body.BackgroundTransparency = 1
+  body.Position = UDim2.fromOffset(40, 20)
+  body.Size = UDim2.fromOffset(240, 16)
+  body.Font = Enum.Font.Gotham
+  body.TextSize = 12
+  body.TextXAlignment = Enum.TextXAlignment.Left
+  body.TextColor3 = Theme.TextDim
+  body.Text = d.Content or ""
+  body.Parent = toast
+
+  TweenService:Create(toast, TweenInfo.new(0.18), {Position = UDim2.new(1, -12, 1, -12)}):Play()
+  task.delay(d.Time or 2.0, function()
+    TweenService:Create(toast, TweenInfo.new(0.18), {BackgroundTransparency = 0.3, Position = UDim2.new(1, 0, 1, 0)}):Play()
+    task.delay(0.2, function() if toast then toast:Destroy() end end)
+  end)
+end
+
+function Orion:Init() end -- kompat API
+
+function Orion:Destroy()
+  local gui = ensureGui()
+  if gui then gui:Destroy() end
+end
+
+-- =====================================================
+-- WINDOW
+-- =====================================================
+local Window = {}
+Window.__index = Window
+
+local function makeNavButton(parent, name)
+  local b = Instance.new("TextButton")
+  b.Size = UDim2.new(1, -4, 0, 32)
+  b.BackgroundColor3 = Theme.Panel
+  b.Text = name
+  b.TextColor3 = Theme.Text
+  b.TextSize = 12
+  b.Font = Enum.Font.Gotham
+  b.AutoButtonColor = false
+  corner(b, 8)
+  stroke(b, 0.5)
+  b.Parent = parent
+  return b
+end
+
+local function makeScroll(parent)
+  local sc = Instance.new("ScrollingFrame")
+  sc.Active = true
+  sc.CanvasSize = UDim2.new(0,0,0,0)
+  sc.AutomaticCanvasSize = Enum.AutomaticSize.Y
+  sc.ScrollBarThickness = 5
+  sc.BorderSizePixel = 0
+  sc.BackgroundTransparency = 1
+  sc.Size = UDim2.new(1, -24, 1, -24)
+  sc.Position = UDim2.fromOffset(12, 12)
+  local list = Instance.new("UIListLayout")
+  list.Padding = UDim.new(0, 8)
+  list.Parent = sc
+  return sc
+end
+
+function Orion:MakeWindow(opts, extra)
+  -- Sugar: Orion:MakeWindow("My Hub"); Orion:MakeWindow{...}; Orion:MakeWindow("My Hub", {...})
+  if typeof(opts) == "string" then
+    opts = { Name = opts }
+    if typeof(extra) == "table" then
+      for k,v in pairs(extra) do opts[k] = v end
+    end
+  elseif typeof(opts) ~= "table" then
+    opts = {}
+  end
+
+  local gui = ensureGui()
+  local main = Instance.new("Frame")
+  main.Name = "Main"
+  main.Size = UDim2.fromOffset(760, 470)
+  main.Position = UDim2.new(0.5, -380, 0.5, -235)
+  main.BackgroundColor3 = Theme.Panel
+  corner(main, 12)
+  stroke(main, 0.55)
+  main.Parent = gui
+
+  local header = Instance.new("Frame")
+  header.Size = UDim2.new(1, 0, 0, 52)
+  header.BackgroundColor3 = Theme.Panel2
+  corner(header, 12)
+  header.Parent = main
+
+  local icon = Instance.new("ImageLabel")
+  icon.BackgroundTransparency = 1
+  icon.Position = UDim2.fromOffset(12, 10)
+  icon.Size = UDim2.fromOffset(28, 28)
+  icon.Image = opts.Icon and (typeof(opts.Icon) == "string" and opts.Icon or ("rbxassetid://"..tostring(opts.Icon))) or ""
+  icon.ImageTransparency = (opts.Icon and 0) or 1
+  icon.ImageColor3 = Theme.Accent
+  icon.Parent = header
+
+  local title = Instance.new("TextLabel")
+  title.BackgroundTransparency = 1
+  title.Position = UDim2.fromOffset(48, 8)
+  title.Size = UDim2.fromOffset(480, 20)
+  title.TextXAlignment = Enum.TextXAlignment.Left
+  title.Font = Enum.Font.GothamMedium
+  title.TextSize = 14
+  title.TextColor3 = Theme.Text
+  title.Text = tostring(opts.Name or "Orionlike Hub")
+  title.Parent = header
+
+  local sub = Instance.new("TextLabel")
+  sub.BackgroundTransparency = 1
+  sub.Position = UDim2.fromOffset(48, 28)
+  sub.Size = UDim2.fromOffset(480, 16)
+  sub.TextXAlignment = Enum.TextXAlignment.Left
+  sub.Font = Enum.Font.Gotham
+  sub.TextSize = 12
+  sub.TextColor3 = Theme.TextDim
+  sub.Text = tostring(opts.IntroText or "")
+  sub.Parent = header
+
+  local nav = Instance.new("Frame")
+  nav.Position = UDim2.fromOffset(0, 52)
+  nav.Size = UDim2.new(0, 180, 1, -52)
+  nav.BackgroundColor3 = Theme.Panel2
+  stroke(nav, 0.5)
+  nav.Parent = main
+  pad(nav, 10)
+  local navList = Instance.new("UIListLayout")
+  navList.Padding = UDim.new(0, 6)
+  navList.Parent = nav
+
+  local content = Instance.new("Frame")
+  content.Position = UDim2.fromOffset(180, 52)
+  content.Size = UDim2.new(1, -180, 1, -52)
+  content.BackgroundTransparency = 1
+  content.Parent = main
+
+  -- resize handle
+  local rh = Instance.new("Frame")
+  rh.AnchorPoint = Vector2.new(1,1)
+  rh.Position = UDim2.new(1, -6, 1, -6)
+  rh.Size = UDim2.fromOffset(14,14)
+  rh.BackgroundColor3 = Theme.Panel2
+  corner(rh, 3); stroke(rh, 0.5); rh.Parent = main
+  local dragging = False
+  rh.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end end)
+  rh.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
+  UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+      local m = UserInputService:GetMouseLocation()
+      local x = math.clamp(m.X - main.AbsolutePosition.X, 560, 1100)
+      local y = math.clamp(m.Y - main.AbsolutePosition.Y, 360, 800)
+      main.Size = UDim2.fromOffset(x, y)
+    end
+  end)
+
+  local self = setmetatable({
+    _Gui = gui,
+    _Main = main,
+    _Nav = nav,
+    _Content = content,
+    _Tabs = {},
+    _CurrentTab = nil,
+    _Lib = self,
+    _SaveConfig = opts.SaveConfig,
+    _ConfigFolder = opts.ConfigFolder,
+  }, Window)
+
+  return self
+end
+
+-- =====================================================
+-- TAB & CONTROLS
+-- =====================================================
+function Window:MakeTab(t)
+  t = t or {}
+  local tabName = t.Name or "Tab"
+  local navBtn = makeNavButton(self._Nav, tabName)
+
+  local page = Instance.new("Frame")
+  page.Visible = false
+  page.BackgroundTransparency = 1
+  page.Size = UDim2.fromScale(1,1)
+  page.Parent = self._Content
+  local sc = makeScroll(page); sc.Parent = page
+
+  local container = Instance.new("Frame")
+  container.BackgroundTransparency = 1
+  container.Size = UDim2.new(1, 0, 0, 0)
+  container.AutomaticSize = Enum.AutomaticSize.Y
+  container.Parent = sc
+  local vlist = Instance.new("UIListLayout")
+  vlist.Padding = UDim.new(0, 8)
+  vlist.Parent = container
+
+  local tab = { Button = navBtn, Page = page, Container = container }
+  self._Tabs[tabName] = tab
+
+  navBtn.MouseButton1Click:Connect(function()
+    for _,tb in pairs(self._Tabs) do
+      tb.Page.Visible = false
+      tb.Button.BackgroundColor3 = Theme.Panel
+    end
+    page.Visible = true
+    navBtn.BackgroundColor3 = Theme.Accent
+    self._CurrentTab = tab
+  end)
+  if not self._CurrentTab then navBtn:Activate() end
+
+  local function card(height)
+    local f = Instance.new("Frame")
+    f.BackgroundColor3 = Theme.Panel2
+    f.BackgroundTransparency = 0.1
+    f.Size = UDim2.new(1, 0, 0, height or 56)
+    corner(f, 10); stroke(f, 0.5); pad(f, 8)
+    f.Parent = container
+    return f
+  end
+  local function header(parent, title, subtitle)
+    local lbl = Instance.new("TextLabel")
+    lbl.BackgroundTransparency = 1
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextYAlignment = Enum.TextYAlignment.Top
+    lbl.RichText = true
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 12
+    lbl.TextColor3 = Theme.Text
+    lbl.Text = subtitle and (title.."\n<font color='#9aa3b2'>"..subtitle.."</font>") or (title or "")
+    lbl.Size = UDim2.new(1, -200, 1, 0)
+    lbl.Parent = parent
+    return lbl
+  end
+
+  local api = {}
+
+  function api:AddSection(d)
+    local c = card(28)
+    local name = (typeof(d)=="table" and d.Name) or (typeof(d)=="string" and d) or "Section"
+    local t = Instance.new("TextLabel")
+    t.BackgroundTransparency = 1
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.Font = Enum.Font.GothamMedium
+    t.TextSize = 12
+    t.TextColor3 = Theme.Text
+    t.Text = name
+    t.Parent = c
+  end
+
+  function api:AddParagraph(a,b)
+    local d
+    if typeof(a)=="table" then d=a else d={Title=a, Content=b} end
+    local c = card(86)
+    local tl = Instance.new("TextLabel"); tl.BackgroundTransparency=1; tl.TextXAlignment=Enum.TextXAlignment.Left
+    tl.Font=Enum.Font.GothamMedium; tl.TextSize=12; tl.TextColor3=Theme.Text; tl.Text=(d.Title or ""); tl.Size=UDim2.new(1,-8,0,18); tl.Parent=c
+    local tx = Instance.new("TextLabel"); tx.BackgroundTransparency=1; tx.TextXAlignment=Enum.TextXAlignment.Left; tx.TextYAlignment=Enum.TextYAlignment.Top
+    tx.TextWrapped=true; tx.Font=Enum.Font.Gotham; tx.TextSize=12; tx.TextColor3=Theme.TextDim; tx.Text=(d.Content or ""); tx.Position=UDim2.fromOffset(0,22); tx.Size=UDim2.new(1,-8,1,-26); tx.Parent=c
+    return { Set=function(dd) tl.Text = dd.Title or tl.Text; tx.Text = dd.Content or tx.Text end }
+  end
+
+  function api:AddLabel(a)
+    local text = (typeof(a)=="table" and a.Name) or a or "Label"
+    local c = card(32)
+    local t = Instance.new("TextLabel")
+    t.BackgroundTransparency = 1
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.Font = Enum.Font.Gotham
+    t.TextSize = 12
+    t.TextColor3 = Theme.Text
+    t.Text = text
+    t.Parent = c
+    return { Set=function(v) t.Text = v end }
+  end
+
+  function api:AddButton(d)
+    d = d or {}
+    local c = card(48)
+    header(c, d.Name or "Button")
+    local b = Instance.new("TextButton")
+    b.AnchorPoint = Vector2.new(1,0.5)
+    b.Position = UDim2.new(1, -12, 0.5, 0)
+    b.Size = UDim2.fromOffset(120, 28)
+    b.Text = d.ButtonName or "Run"
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 12
+    b.TextColor3 = Theme.Text
+    b.BackgroundColor3 = Theme.Panel
+    b.BackgroundTransparency = 0.1
+    b.AutoButtonColor = false
+    corner(b, 8); stroke(b, 0.5)
+    b.Parent = c
+    b.MouseButton1Click:Connect(function() if d.Callback then pcall(d.Callback) end end)
+  end
+
+  function api:AddToggle(d)
+    d = d or {}
+    local c = card(56)
+    header(c, d.Name or "Toggle", d.Info)
+    local accent = d.Color or Theme.Accent
+    local sw = Instance.new("TextButton")
+    sw.Size = UDim2.fromOffset(56, 28)
+    sw.AnchorPoint = Vector2.new(1,0.5)
+    sw.Position = UDim2.new(1, -12, 0.5, 0)
+    sw.Text = ""; sw.AutoButtonColor = false
+    sw.BackgroundColor3 = (d.Default and accent) or Color3.fromRGB(60,62,70)
+    corner(sw, 14); stroke(sw, 0.5); sw.Parent = c
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.fromOffset(22,22)
+    knob.Position = (d.Default and UDim2.fromOffset(30,3)) or UDim2.fromOffset(4,3)
+    knob.BackgroundColor3 = Color3.fromRGB(240,240,240)
+    corner(knob, 11); knob.Parent = sw
+    local on = d.Default or false
+
+    local function set(v)
+      on = v and true or false
+      sw.BackgroundColor3 = on and accent or Color3.fromRGB(60,62,70)
+      knob.Position = on and UDim2.fromOffset(30,3) or UDim2.fromOffset(4,3)
+      if d.Flag then
+        local flags = makeFlagTable(Orion)
+        if not flags[d.Flag] then flags[d.Flag] = {Value=on} end
+        flags[d.Flag].Value = on
+      end
+    end
+
+    sw.MouseButton1Click:Connect(function()
+      set(not on)
+      if d.Callback then pcall(d.Callback, on) end
+    end)
+
+    attachFlag(Orion, d.Flag, set, function() return on end, on)
+    set(on)
+    return { Set=set }
+  end
+
+  function api:AddSlider(d)
+    d = d or {}
+    local min, max = d.Min or 0, d.Max or 100
+    local inc = math.max(1, d.Increment or 1)
+    local def = d.Default or min
+    local c = card(68)
+    local vn = d.ValueName
+    header(c, d.Name or "Slider", (vn and (vn..": ") or "")..string.format("%d–%d", min, max))
+    local valLbl = Instance.new("TextLabel")
+    valLbl.BackgroundTransparency = 1
+    valLbl.AnchorPoint = Vector2.new(1,0)
+    valLbl.Position = UDim2.new(1, -12, 0, 0)
+    valLbl.Size = UDim2.fromOffset(100, 16)
+    valLbl.Font = Enum.Font.Gotham
+    valLbl.TextSize = 12
+    valLbl.TextColor3 = Theme.TextDim
+    valLbl.TextXAlignment = Enum.TextXAlignment.Right
+    valLbl.Parent = c
+
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(1, -24, 0, 6)
+    track.Position = UDim2.fromOffset(12, 38)
+    track.BackgroundColor3 = Color3.fromRGB(60,62,70)
+    corner(track, 3); track.Parent = c
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(0,0,1,0)
+    fill.BackgroundColor3 = d.Color or Theme.Accent
+    corner(fill, 3); fill.Parent = track
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.fromOffset(14,14)
+    knob.AnchorPoint = Vector2.new(0.5,0.5)
+    knob.Position = UDim2.new(0,0,0.5,0)
+    knob.BackgroundColor3 = Color3.fromRGB(240,240,240)
+    corner(knob, 7); knob.Parent = track
+
+    local value = def
+    local function roundStep(v)
+      v = math.clamp(v, min, max)
+      local n = math.floor((v - min)/inc + 0.5)*inc + min
+      return math.clamp(n, min, max)
+    end
+    local function set(v)
+      value = roundStep(v)
+      local a = (value - min) / (max - min)
+      fill.Size = UDim2.new(a,0,1,0)
+      knob.Position = UDim2.new(a,0,0.5,0)
+      valLbl.Text = tostring(value)
+      if d.Flag then
+        local flags = makeFlagTable(Orion)
+        if not flags[d.Flag] then flags[d.Flag] = {Value=value} end
+        flags[d.Flag].Value = value
+      end
+      if d.Callback then pcall(d.Callback, value) end
+    end
+
+    local dragging = false
+    track.InputBegan:Connect(function(input)
+      if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
+    end)
+    track.InputEnded:Connect(function(input)
+      if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+      if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local rel = math.clamp((UserInputService:GetMouseLocation().X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+        set(min + rel * (max - min))
+      end
+    end)
+
+    attachFlag(Orion, d.Flag, set, function() return value end, value)
+    set(def)
+    return { Set=set }
+  end
+
+  function api:AddDropdown(d)
+    d = d or {}
+    local items = table.clone(d.Options or {"A","B"})
+    local sel = d.Default or items[1]
+    local c = card(56)
+    header(c, d.Name or "Dropdown")
+
+    local btn = Instance.new("TextButton")
+    btn.AnchorPoint = Vector2.new(1,0.5)
+    btn.Position = UDim2.new(1, -12, 0.5, 0)
+    btn.Size = UDim2.fromOffset(220, 28)
+    btn.Text = sel or ""
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 12
+    btn.TextColor3 = Theme.Text
+    btn.BackgroundColor3 = Theme.Panel
+    btn.BackgroundTransparency = 0.1
+    btn.AutoButtonColor = false
+    corner(btn, 8); stroke(btn, 0.5)
+    btn.Parent = c
+
+    local menu = Instance.new("Frame")
+    menu.Visible = false
+    menu.Size = UDim2.new(0, 220, 0, math.clamp(#items,1,8)*24 + 8)
+    menu.Position = UDim2.new(1, -12, 1, 6)
+    menu.BackgroundColor3 = Theme.Panel
+    menu.BackgroundTransparency = 0.05
+    corner(menu, 8); stroke(menu, 0.5)
+    menu.Parent = c
+    local l = Instance.new("UIListLayout")
+    l.Padding = UDim.new(0,6); pad(menu,6); l.Parent = menu
+
+    local function rebuild()
+      for _,ch in ipairs(menu:GetChildren()) do if ch:IsA("TextButton") then ch:Destroy() end end
+      for _,it in ipairs(items) do
+        local i = Instance.new("TextButton")
+        i.Size = UDim2.new(1,0,0,20)
+        i.Text = it
+        i.TextColor3 = Theme.Text
+        i.Font = Enum.Font.Gotham
+        i.TextSize = 12
+        i.BackgroundTransparency = 1
+        i.Parent = menu
+        i.MouseButton1Click:Connect(function()
+          sel = it
+          btn.Text = sel
+          if d.Flag then
+            local flags = makeFlagTable(Orion); flags[d.Flag] = flags[d.Flag] or {}
+            flags[d.Flag].Value = sel
+          end
+          if d.Callback then pcall(d.Callback, sel) end
+          menu.Visible = false
+        end)
+      end
+      menu.Size = UDim2.new(0,220,0, math.clamp(#items,1,8)*24 + 8)
+    end
+
+    btn.MouseButton1Click:Connect(function() menu.Visible = not menu.Visible end)
+    rebuild()
+
+    local function set(v) sel=v; btn.Text=v; if d.Callback then pcall(d.Callback, v) end end
+    attachFlag(Orion, d.Flag, set, function() return sel end, sel)
+
+    return {
+      Set = set,
+      Add = function(v) table.insert(items, v); rebuild() end,
+      Remove = function(v)
+        for k,x in ipairs(items) do if x==v then table.remove(items,k) break end end
+        if sel==v then sel = items[1]; btn.Text = sel or "" end
+        rebuild()
+      end,
+    }
+  end
+
+  function api:AddTextbox(d)
+    d = d or {}
+    local c = card(56)
+    header(c, d.Name or "Textbox")
+    local box = Instance.new("TextBox")
+    box.AnchorPoint = Vector2.new(1,0.5)
+    box.Position = UDim2.new(1, -12, 0.5, 0)
+    box.Size = UDim2.fromOffset(220, 28)
+    box.Text = d.Default or ""
+    box.PlaceholderText = d.Placeholder or (d.Default and "" or "Ketik...")
+    box.ClearTextOnFocus = d.TextDisappear or false
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 12
+    box.TextColor3 = Theme.Text
+    box.BackgroundColor3 = Theme.Panel
+    box.BackgroundTransparency = 0.1
+    corner(box, 8); stroke(box, 0.5)
+    box.Parent = c
+
+    local function setText(t)
+      box.Text = t or ""
+      if d.Flag then
+        local flags = makeFlagTable(Orion); flags[d.Flag] = flags[d.Flag] or {}
+        flags[d.Flag].Value = box.Text
+      end
+    end
+
+    box.FocusLost:Connect(function()
+      if d.Callback then pcall(d.Callback, box.Text) end
+      if d.TextDisappear then box.Text = "" end
+    end)
+
+    attachFlag(Orion, d.Flag, setText, function() return box.Text end, box.Text)
+    return { Set = setText }
+  end
+
+  function api:AddColorpicker(d)
+    d = d or {}
+    local c = card(74)
+    header(c, d.Name or "Color", d.Info)
+    local swatch = Instance.new("TextButton")
+    swatch.AnchorPoint = Vector2.new(1,0)
+    swatch.Position = UDim2.new(1, -12, 0, 0)
+    swatch.Size = UDim2.fromOffset(160, 28)
+    swatch.Text = ""; swatch.BackgroundColor3 = d.Default or Theme.Accent
+    corner(swatch, 8); stroke(swatch, 0.5)
+    swatch.Parent = c
+
+    local row = Instance.new("Frame"); row.BackgroundTransparency=1; row.Size=UDim2.new(1,-24,0,28); row.Position=UDim2.fromOffset(12,36); row.Parent=c
+    local list = Instance.new("UIListLayout"); list.FillDirection=Enum.FillDirection.Horizontal; list.Padding=UDim.new(0,6); list.Parent=row
+    local presets = {
+      Color3.fromRGB(0,170,255), Color3.fromRGB(124,58,237), Color3.fromRGB(34,197,94),
+      Color3.fromRGB(14,165,233), Color3.fromRGB(249,115,22), Color3.fromRGB(225,29,72)
+    }
+    for _,col in ipairs(presets) do
+      local p = Instance.new("TextButton"); p.Size=UDim2.fromOffset(28,28); p.Text=""; p.AutoButtonColor=false; p.BackgroundColor3=col
+      corner(p,6); stroke(p,0.5); p.Parent=row
+      p.MouseButton1Click:Connect(function()
+        swatch.BackgroundColor3 = col
+        if d.Flag then local flags=makeFlagTable(Orion); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value=col end
+        if d.Callback then pcall(d.Callback, col) end
+      end)
+    end
+
+    local function set(col) swatch.BackgroundColor3=col; if d.Callback then pcall(d.Callback,col) end end
+    attachFlag(Orion, d.Flag, set, function() return swatch.BackgroundColor3 end, swatch.BackgroundColor3)
+    return { Set=set }
+  end
+
+  function api:AddBind(d)
+    d = d or {}
+    local c = card(56)
+    header(c, d.Name or "Keybind")
+    local box = Instance.new("TextBox")
+    box.AnchorPoint = Vector2.new(1,0.5)
+    box.Position = UDim2.new(1, -12, 0.5, 0)
+    box.Size = UDim2.fromOffset(220, 28)
+    box.Text = (d.Default and d.Default.Name) or "Klik untuk set"
+    box.ClearTextOnFocus = false
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 12
+    box.TextColor3 = Theme.Text
+    box.BackgroundColor3 = Theme.Panel
+    box.BackgroundTransparency = 0.1
+    corner(box, 8); stroke(box, 0.5)
+    box.Parent = c
+
+    local current = d.Default or Enum.KeyCode.K
+    local holding = false
+
+    local function setKey(kc)
+      current = kc
+      box.Text = kc and kc.Name or "(none)"
+      if d.Flag then local flags=makeFlagTable(Orion); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value=current end
+    end
+
+    box.Focused:Connect(function() box.Text = "Tekan tombol..." end)
+    box.FocusLost:Connect(function() if current then box.Text = current.Name end end)
+
+    UserInputService.InputBegan:Connect(function(input, gp)
+      if gp then return end
+      if box:IsFocused() and input.UserInputType == Enum.UserInputType.Keyboard then
+        setKey(input.KeyCode)
+        box:ReleaseFocus()
+      end
+      if input.KeyCode == current then
+        if d.Hold then holding = true end
+        if d.Callback and not d.Hold then pcall(d.Callback) end
+      end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+      if input.KeyCode == current and d.Hold and holding then
+        holding = false
+        if d.Callback then pcall(d.Callback) end
+      end
+    end)
+
+    attachFlag(Orion, d.Flag, setKey, function() return current end, current)
+    setKey(current)
+    return { Set=setKey }
+  end
+
+  return api
+end
+
+-- =====================================================
+-- EXPORT
+-- =====================================================
+local M = setmetatable({ Flags = {} }, Orion)
+return M
