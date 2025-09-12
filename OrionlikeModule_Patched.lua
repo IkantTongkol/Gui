@@ -1,13 +1,11 @@
 --[[
-Orionlike Roblox UI — ModuleScript (API Orion 1:1, patched)
-Patch list (2025-09-12):
-- Default window smaller + opts.Size
-- Minimize hides nav/content
-- First tab auto-active
-- Search bar per-tab (keeps on top)
-- Dropdown uses popup overlay (no clipping in ScrollingFrame)
-- Stable items copy (no table.clone)
-- UIListLayout.SortOrder fixed (prevents search bar jumping)
+Orionlike Roblox UI — ModuleScript (API Orion 1:1, dropdown robust fix)
+Patch addendum (2025-09-12):
+- Popup overlay uses very high ZIndex + ScreenGui.DisplayOrder = 1000
+- Dropdown menu position clamped ke viewport (tidak off-screen)
+- Notif saat Options kosong (debug-friendly)
+- Search bar tetap di atas via LayoutOrder
+- Semua patch sebelumnya tetap ada
 ]]
 
 local Players = game:GetService("Players")
@@ -15,6 +13,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
+local Camera = workspace.CurrentCamera
 
 local Orion = {}
 Orion.__index = Orion
@@ -55,16 +54,17 @@ local function ensureGui()
     gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 1000 -- TOPMOST
     gui.Parent = p
   end
-  -- popup root (overlay layer for dropdown/menus)
+  -- popup root
   local pr = gui:FindFirstChild("OrionlikePopup")
   if not pr then
     pr = Instance.new("Frame")
     pr.Name = "OrionlikePopup"
     pr.BackgroundTransparency = 1
     pr.Size = UDim2.fromScale(1,1)
-    pr.ZIndex = 200
+    pr.ZIndex = 5000 -- very high
     pr.Parent = gui
   end
   return gui, pr
@@ -301,7 +301,7 @@ function Window:MakeTab(t)
   local page = Instance.new("Frame"); page.Visible=false; page.BackgroundTransparency=1; page.Size=UDim2.fromScale(1,1); page.Parent = self._Content
   local sc = makeScroll(page); sc.Parent = page
 
-  -- search per-tab (stays at top via LayoutOrder)
+  -- search per-tab
   local searchBar = Instance.new("Frame"); searchBar.Name="SearchBar"; searchBar.BackgroundTransparency=1; searchBar.Size=UDim2.new(1, -24, 0, 30); searchBar.Position=UDim2.fromOffset(12, 8); searchBar.LayoutOrder=1; searchBar.Parent=sc
   local box = Instance.new("TextBox"); box.PlaceholderText="Search controls..."; box.Text=""; box.Font=Enum.Font.Gotham; box.TextSize=12; box.TextColor3=Theme.Text
   box.BackgroundColor3=Theme.Panel; box.BackgroundTransparency=0.1; box.Size=UDim2.new(1,0,1,0); box.ClearTextOnFocus=false; box.Parent = searchBar
@@ -445,7 +445,7 @@ function Window:MakeTab(t)
   function api:AddDropdown(d)
     d = d or {}
     local items = {}
-    for _,v in ipairs(d.Options or {"A","B"}) do table.insert(items, v) end -- no table.clone dependency
+    for _,v in ipairs(d.Options or {"A","B"}) do table.insert(items, v) end
     local sel = d.Default or items[1]
     local c = card(56); header(c, d.Name or "Dropdown")
 
@@ -453,13 +453,17 @@ function Window:MakeTab(t)
     btn.Text = sel or ""; btn.Font=Enum.Font.Gotham; btn.TextSize=12; btn.TextColor3=Theme.Text; btn.BackgroundColor3=Theme.Panel; btn.BackgroundTransparency=0.1; btn.AutoButtonColor=false; corner(btn,8); stroke(btn,0.5); btn.Parent=c
 
     local popupRoot = self._PopupRoot
-    local currentPopup -- container for blocker + menu
+    local currentPopup
     local function closePopup() if currentPopup then currentPopup:Destroy(); currentPopup = nil end end
 
     local function rebuild(menu)
       for _,ch in ipairs(menu:GetChildren()) do if ch:IsA("TextButton") then ch:Destroy() end end
+      if #items == 0 then
+        local i = Instance.new("TextLabel"); i.Size=UDim2.new(1,0,0,22); i.Text="(no options)"; i.TextColor3=Theme.TextDim; i.Font=Enum.Font.Gotham; i.TextSize=12; i.BackgroundTransparency=1; i.ZIndex=5001; i.Parent=menu
+        return
+      end
       for _,it in ipairs(items) do
-        local i = Instance.new("TextButton"); i.Size=UDim2.new(1,0,0,22); i.Text=it; i.TextColor3=Theme.Text; i.Font=Enum.Font.Gotham; i.TextSize=12; i.BackgroundTransparency=1; i.ZIndex=201; i.Parent=menu
+        local i = Instance.new("TextButton"); i.Size=UDim2.new(1,0,0,22); i.Text=it; i.TextColor3=Theme.Text; i.Font=Enum.Font.Gotham; i.TextSize=12; i.BackgroundTransparency=1; i.ZIndex=5001; i.Parent=menu
         i.MouseButton1Click:Connect(function()
           sel = it; btn.Text = sel
           if d.Flag then local flags=makeFlagTable(Orion); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value=sel end
@@ -469,25 +473,42 @@ function Window:MakeTab(t)
       end
     end
 
+    local function clampMenuPos(x, y, w, h)
+      local vs = Camera and Camera.ViewportSize or Vector2.new(1920,1080)
+      local nx = math.clamp(x, 8, vs.X - w - 8)
+      local ny = math.clamp(y, 8, vs.Y - h - 8)
+      return nx, ny
+    end
+
     local function openPopup()
       closePopup()
-      local holder = Instance.new("Frame"); holder.Name="DropdownPopup"; holder.BackgroundTransparency=1; holder.Size=UDim2.fromScale(1,1); holder.ZIndex=199; holder.Parent=popupRoot
-      local blocker = Instance.new("TextButton"); blocker.BackgroundTransparency=1; blocker.Text=""; blocker.Size=UDim2.fromScale(1,1); blocker.ZIndex=199; blocker.Parent=holder
-      local menu = Instance.new("Frame"); menu.BackgroundColor3=Theme.Panel; menu.BackgroundTransparency=0.05; menu.ZIndex=200
+      local holder = Instance.new("Frame"); holder.Name="DropdownPopup"; holder.BackgroundTransparency=1; holder.Size=UDim2.fromScale(1,1); holder.ZIndex=5000; holder.Parent=popupRoot
+      local blocker = Instance.new("TextButton"); blocker.BackgroundTransparency=1; blocker.Text=""; blocker.Size=UDim2.fromScale(1,1); blocker.ZIndex=5000; blocker.Parent=holder
+      local menu = Instance.new("Frame"); menu.BackgroundColor3=Theme.Panel; menu.BackgroundTransparency=0.05; menu.ZIndex=5001
       corner(menu,8); stroke(menu,0.5); pad(menu,6); menu.Parent=holder
 
       local l = Instance.new("UIListLayout"); l.Padding=UDim.new(0,6); l.SortOrder = Enum.SortOrder.LayoutOrder; l.Parent=menu
 
-      -- position under the button (screen space)
-      local pos = btn.AbsolutePosition; local size = btn.AbsoluteSize
-      local height = math.clamp(#items,1,8)*24 + 8
+      local height = math.clamp(math.max(#items,1),1,8)*24 + 8
       menu.Size = UDim2.fromOffset(220, height)
-      menu.Position = UDim2.fromOffset(pos.X + size.X - 220, pos.Y + size.Y + 6)
+
+      -- position under the button
+      local pos = btn.AbsolutePosition; local size = btn.AbsoluteSize
+      local mx = pos.X + size.X - 220
+      local my = pos.Y + size.Y + 6
+      mx, my = clampMenuPos(mx, my, 220, height)
+      menu.Position = UDim2.fromOffset(mx, my)
 
       rebuild(menu)
 
       blocker.MouseButton1Click:Connect(closePopup)
       currentPopup = holder
+
+      if #items == 0 then
+        local ok = pcall(function()
+          game:GetService("StarterGui"):SetCore("SendNotification", {Title="Dropdown", Text="Options kosong.", Duration=1})
+        end)
+      end
     end
 
     btn.MouseButton1Click:Connect(function()
