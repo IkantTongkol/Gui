@@ -1,5 +1,5 @@
 --// TongkolUI - Fresh from scratch (single file)
---// by: kamu + asistenmu 😄
+--// by: kamu + asistenmu :)
 
 -- Services
 local Players = game:GetService("Players")
@@ -7,7 +7,14 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
+
+-- Keep CurrentCamera up-to-date
 local Camera = workspace.CurrentCamera
+pcall(function()
+  workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    Camera = workspace.CurrentCamera
+  end)
+end)
 
 --= THEME =======================================================================
 local Theme = {
@@ -25,24 +32,39 @@ local Theme = {
 --= UTILS =======================================================================
 local function corner(inst, r)
   local c = Instance.new("UICorner")
-  c.CornerRadius = UDim.new(0, r or 10); c.Parent = inst; return c
+  c.CornerRadius = UDim.new(0, r or 10)
+  c.Parent = inst
+  return c
 end
+
 local function stroke(inst, tr, col)
   local s = Instance.new("UIStroke")
-  s.Color = col or Theme.Stroke; s.Thickness = 1; s.Transparency = tr or 0.4
-  s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Parent = inst; return s
+  s.Color = col or Theme.Stroke
+  s.Thickness = 1
+  s.Transparency = tr or 0.4
+  s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+  s.Parent = inst
+  return s
 end
+
 local function pad(inst, p, lr)
   local pd = Instance.new("UIPadding")
-  pd.PaddingTop = UDim.new(0, p or 8); pd.PaddingBottom = UDim.new(0, p or 8)
-  pd.PaddingLeft = UDim.new(0, lr or 12); pd.PaddingRight = UDim.new(0, lr or 12)
-  pd.Parent = inst; return pd
+  pd.PaddingTop = UDim.new(0, p or 8)
+  pd.PaddingBottom = UDim.new(0, p or 8)
+  pd.PaddingLeft = UDim.new(0, lr or 12)
+  pd.PaddingRight = UDim.new(0, lr or 12)
+  pd.Parent = inst
+  return pd
 end
+
 local function hasFS()
-  return typeof(writefile)=="function" and typeof(readfile)=="function"
-     and typeof(isfile)=="function" and typeof(isfolder)=="function"
+  return typeof(writefile)=="function"
+     and typeof(readfile)=="function"
+     and typeof(isfile)=="function"
+     and typeof(isfolder)=="function"
      and typeof(makefolder)=="function"
 end
+
 local function ensureGui()
   local p = Players.LocalPlayer:WaitForChild("PlayerGui")
   local gui = p:FindFirstChild("TongkolUIRoot")
@@ -72,23 +94,33 @@ local Tongkol = {}; Tongkol.__index = Tongkol
 Tongkol.Flags = {}
 
 local function makeFlagTable(lib) lib.Flags = lib.Flags or {}; return lib.Flags end
+
 local function attachFlag(lib, flagName, setter, getter, initial)
   if not flagName then return end
   local flags = makeFlagTable(lib)
   if not flags[flagName] then
-    flags[flagName] = { Value = initial, Set = function(v) setter(v) end, Get = function() return getter() end }
+    flags[flagName] = {
+      Value = initial,
+      Set = function(v) setter(v) end,
+      Get = function() return getter() end
+    }
   end
 end
+
 local function encodeFlags()
   local data = {}
   for k,entry in pairs(Tongkol.Flags or {}) do
     local v = entry and (entry.Value ~= nil and entry.Value or entry)
-    if typeof(v)=="Color3" then v = {__c3=true, r=v.R, g=v.G, b=v.B}
-    elseif typeof(v)=="EnumItem" then v = {__e=true, et=v.EnumType.Name, n=v.Name} end
+    if typeof(v)=="Color3" then
+      v = {__c3=true, r=v.R, g=v.G, b=v.B}
+    elseif typeof(v)=="EnumItem" then
+      v = {__e=true, et=v.EnumType.Name, n=v.Name}
+    end
     data[k] = v
   end
   return HttpService:JSONEncode(data)
 end
+
 local function decodeAndApply(json)
   if not json or json=="" then return false, "empty" end
   local ok, data = pcall(HttpService.JSONDecode, HttpService, json)
@@ -97,12 +129,18 @@ local function decodeAndApply(json)
     if type(v)=="table" and v.__c3 then v = Color3.new(v.r, v.g, v.b) end
     if type(v)=="table" and v.__e and Enum[v.et] and Enum[v.et][v.n] then v = Enum[v.et][v.n] end
     local entry = Tongkol.Flags and Tongkol.Flags[k]
-    if entry and entry.Set then entry.Set(v) else Tongkol.Flags[k] = Tongkol.Flags[k] or {}; Tongkol.Flags[k].Value = v end
+    if entry and entry.Set then
+      entry.Set(v)
+    else
+      Tongkol.Flags[k] = Tongkol.Flags[k] or {}
+      Tongkol.Flags[k].Value = v
+    end
   end
   return true
 end
 
 function Tongkol:SetConfigName(name) self._ConfigName = tostring(name or "config") end
+
 function Tongkol:SaveConfig(window)
   window = window or self._LastWindow; if not window then return false, "no-window" end
   if not window._SaveConfig then return false, "disabled" end
@@ -111,20 +149,29 @@ function Tongkol:SaveConfig(window)
   local body = encodeFlags()
   if hasFS() then
     if not isfolder(folder) then makefolder(folder) end
-    writefile(folder.."/"..fname, body); return true
+    writefile(folder.."/"..fname, body)
+    return true
   else
-    local gui = window._Gui or ensureGui(); gui:SetAttribute("TongkolConfig", body); return true, "attribute"
+    local gui = window._Gui or select(1, ensureGui())
+    gui:SetAttribute("TongkolConfig", body)
+    return true, "attribute"
   end
 end
+
 function Tongkol:LoadConfig(window)
   window = window or self._LastWindow; if not window then return false, "no-window" end
   local folder = tostring(window._ConfigFolder or "TongkolUI")
   local fname = tostring(self._ConfigName or "config") .. ".json"
   local json
-  if hasFS() and isfile(folder.."/"..fname) then json = readfile(folder.."/"..fname)
-  else local gui = window._Gui or ensureGui(); json = gui:GetAttribute("TongkolConfig") end
+  if hasFS() and isfile(folder.."/"..fname) then
+    json = readfile(folder.."/"..fname)
+  else
+    local gui = window._Gui or select(1, ensureGui())
+    json = gui:GetAttribute("TongkolConfig")
+  end
   return decodeAndApply(json)
 end
+
 function Tongkol:EnableAutoSave(window, interval)
   window = window or self._LastWindow; interval = tonumber(interval) or 2
   if not window or window._AutoSaveConn then return end
@@ -161,33 +208,62 @@ function Tongkol:Notify(d)
 end
 
 function Tongkol:Init() end
-function Tongkol:Destroy() local gui = ensureGui(); if gui then gui:Destroy() end end
+function Tongkol:Destroy()
+  local gui = select(1, ensureGui())
+  if gui then gui:Destroy() end
+end
 
 --= WINDOW ======================================================================
 local Window = {}; Window.__index = Window
 
 function Tongkol:CreateWindow(opts)
-  if typeof(opts)~="table" then opts = {} end
+  if typeof(opts)~="table" then opts = { Name = tostring(opts) } end
+  opts = opts or {}
   local gui, popupRoot = ensureGui()
 
-  local main = Instance.new("Frame"); main.Name="Main"
+  local main = Instance.new("Frame")
+  main.Name="Main"
   main.Size = opts.Size or UDim2.fromOffset(640,420)
+  main.BackgroundColor3 = Theme.Panel
+  corner(main,12); stroke(main,0.55)
+  main.Parent = gui
   main.Position = UDim2.new(0.5, -main.Size.X.Offset/2, 0.5, -main.Size.Y.Offset/2)
-  main.BackgroundColor3 = Theme.Panel; corner(main,12); stroke(main,0.55); main.Parent = gui
 
-  local header = Instance.new("Frame"); header.Size=UDim2.new(1,0,0,52); header.BackgroundColor3=Theme.Panel2; corner(header,12); header.Parent=main
-  local icon = Instance.new("ImageLabel"); icon.BackgroundTransparency=1; icon.Position=UDim2.fromOffset(12,10); icon.Size=UDim2.fromOffset(28,28)
-  icon.Image = opts.Icon and (type(opts.Icon)=="string" and opts.Icon or ("rbxassetid://"..tostring(opts.Icon))) or ""; icon.ImageTransparency = opts.Icon and 0 or 1; icon.ImageColor3=Theme.Accent; icon.Parent=header
-  local title = Instance.new("TextLabel"); title.BackgroundTransparency=1; title.Position=UDim2.fromOffset(48,8); title.Size=UDim2.fromOffset(520,18)
-  title.Font=Enum.Font.GothamMedium; title.TextSize=14; title.TextXAlignment=Enum.TextXAlignment.Left; title.TextColor3=Theme.Text; title.Text=tostring(opts.Name or "TongkolUI"); title.Parent=header
-  local sub = Instance.new("TextLabel"); sub.BackgroundTransparency=1; sub.Position=UDim2.fromOffset(48,28); sub.Size=UDim2.fromOffset(520,16)
-  sub.Font=Enum.Font.Gotham; sub.TextSize=12; sub.TextXAlignment=Enum.TextXAlignment.Left; sub.TextColor3=Theme.TextDim; sub.Text=tostring(opts.IntroText or ""); sub.Parent=header
+  local header = Instance.new("Frame")
+  header.Size=UDim2.new(1,0,0,52)
+  header.BackgroundColor3=Theme.Panel2
+  corner(header,12)
+  header.Parent=main
+
+  local icon = Instance.new("ImageLabel")
+  icon.BackgroundTransparency=1; icon.Position=UDim2.fromOffset(12,10); icon.Size=UDim2.fromOffset(28,28)
+  icon.Image = opts.Icon and (type(opts.Icon)=="string" and opts.Icon or ("rbxassetid://"..tostring(opts.Icon))) or ""
+  icon.ImageTransparency = opts.Icon and 0 or 1
+  icon.ImageColor3=Theme.Accent
+  icon.Parent=header
+
+  local title = Instance.new("TextLabel")
+  title.BackgroundTransparency=1; title.Position=UDim2.fromOffset(48,8); title.Size=UDim2.fromOffset(520,18)
+  title.Font=Enum.Font.GothamMedium; title.TextSize=14; title.TextXAlignment=Enum.TextXAlignment.Left; title.TextColor3=Theme.Text
+  title.Text=tostring(opts.Name or "TongkolUI")
+  title.Parent=header
+
+  local sub = Instance.new("TextLabel")
+  sub.BackgroundTransparency=1; sub.Position=UDim2.fromOffset(48,28); sub.Size=UDim2.fromOffset(520,16)
+  sub.Font=Enum.Font.Gotham; sub.TextSize=12; sub.TextXAlignment=Enum.TextXAlignment.Left; sub.TextColor3=Theme.TextDim
+  sub.Text=tostring(opts.IntroText or "")
+  sub.Parent=header
 
   -- buttons (minimize/close)
-  local btnMini = Instance.new("ImageButton"); btnMini.BackgroundTransparency=1; btnMini.Size=UDim2.fromOffset(20,20); btnMini.AnchorPoint=Vector2.new(1,0)
+  local btnMini = Instance.new("ImageButton")
+  btnMini.BackgroundTransparency=1; btnMini.Size=UDim2.fromOffset(20,20); btnMini.AnchorPoint=Vector2.new(1,0)
   btnMini.Position=UDim2.new(1,-44,0,16); btnMini.Image="rbxassetid://6035067836"; btnMini.Parent=header
-  local btnClose = Instance.new("ImageButton"); btnClose.BackgroundTransparency=1; btnClose.Size=UDim2.fromOffset(20,20); btnClose.AnchorPoint=Vector2.new(1,0)
-  btnClose.Position=UDim2.new(1,-20,0,16); btnClose.Image="rbxassetid://3926305904"; btnClose.ImageRectOffset=Vector2.new(284,4); btnClose.ImageRectSize=Vector2.new(24,24); btnClose.Parent=header
+
+  local btnClose = Instance.new("ImageButton")
+  btnClose.BackgroundTransparency=1; btnClose.Size=UDim2.fromOffset(20,20); btnClose.AnchorPoint=Vector2.new(1,0)
+  btnClose.Position=UDim2.new(1,-20,0,16); btnClose.Image="rbxassetid://3926305904"
+  btnClose.ImageRectOffset=Vector2.new(284,4); btnClose.ImageRectSize=Vector2.new(24,24)
+  btnClose.Parent=header
 
   -- drag
   do
@@ -195,7 +271,9 @@ function Tongkol:CreateWindow(opts)
     header.InputBegan:Connect(function(input)
       if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
         dragging=true; dragStart=input.Position; startPos=main.Position
-        input.Changed:Connect(function() if input.UserInputState==Enum.UserInputState.End then dragging=false end end)
+        input.Changed:Connect(function()
+          if input.UserInputState==Enum.UserInputState.End then dragging=false end
+        end)
       end
     end)
     UserInputService.InputChanged:Connect(function(input)
@@ -207,9 +285,14 @@ function Tongkol:CreateWindow(opts)
   end
 
   -- nav & content
-  local nav = Instance.new("Frame"); nav.Position=UDim2.fromOffset(0,52); nav.Size=UDim2.new(0,180,1,-52); nav.BackgroundColor3=Theme.Panel2; stroke(nav,0.5); pad(nav,10); nav.Parent=main
+  local nav = Instance.new("Frame")
+  nav.Position=UDim2.fromOffset(0,52); nav.Size=UDim2.new(0,180,1,-52)
+  nav.BackgroundColor3=Theme.Panel2; stroke(nav,0.5); pad(nav,10); nav.Parent=main
   local navList = Instance.new("UIListLayout"); navList.Padding=UDim.new(0,6); navList.Parent=nav
-  local content = Instance.new("Frame"); content.Position=UDim2.fromOffset(180,52); content.Size=UDim2.new(1,-180,1,-52); content.BackgroundTransparency=1; content.Parent=main
+
+  local content = Instance.new("Frame")
+  content.Position=UDim2.fromOffset(180,52); content.Size=UDim2.new(1,-180,1,-52)
+  content.BackgroundTransparency=1; content.Parent=main
 
   -- resize handle
   local rh = Instance.new("Frame"); rh.AnchorPoint=Vector2.new(1,1); rh.Position=UDim2.new(1,-6,1,-6); rh.Size=UDim2.fromOffset(14,14)
@@ -220,8 +303,8 @@ function Tongkol:CreateWindow(opts)
   UserInputService.InputChanged:Connect(function(i)
     if resizing and i.UserInputType==Enum.UserInputType.MouseMovement then
       local m=UserInputService:GetMouseLocation()
-      local x=math.clamp(m.X-main.AbsolutePosition.X, 520, 1200)
-      local y=math.clamp(m.Y-main.AbsolutePosition.Y, 320, 800)
+      local x=math.clamp(m.X-main.AbsolutePosition.X, 520, 1400)
+      local y=math.clamp(m.Y-main.AbsolutePosition.Y, 320, 900)
       main.Size = UDim2.fromOffset(x,y)
     end
   end)
@@ -240,7 +323,11 @@ function Tongkol:CreateWindow(opts)
     end
   end
   btnMini.MouseButton1Click:Connect(function() setCollapsed(not collapsed) end)
-  btnClose.MouseButton1Click:Connect(function() (gui.Parent or gui):Destroy() end)
+
+  btnClose.MouseButton1Click:Connect(function()
+    -- hanya hancurkan ScreenGui, jangan pernah PlayerGui
+    if gui then gui:Destroy() end
+  end)
 
   -- hotkey hide/show
   local hidden=false
@@ -274,8 +361,10 @@ local function makeNavButton(parent, name)
   local b = Instance.new("TextButton")
   b.Size=UDim2.new(1,-4,0,32); b.BackgroundColor3=Theme.Panel; b.Text=name
   b.TextColor3=Theme.Text; b.TextSize=12; b.Font=Enum.Font.Gotham; b.AutoButtonColor=false
-  corner(b,8); stroke(b,0.5); b.Parent=parent; return b
+  corner(b,8); stroke(b,0.5); b.Parent=parent
+  return b
 end
+
 local function makeScroll(parent)
   local sc = Instance.new("ScrollingFrame")
   sc.Active=true; sc.CanvasSize=UDim2.new(0,0,0,0); sc.AutomaticCanvasSize=Enum.AutomaticSize.Y
@@ -369,26 +458,11 @@ function Window:CreateTab(t)
     if typeof(a)=="table" then return a end
     return {Name=a, Callback=b, ButtonName=c, Info=d}
   end
-  local function asLabel(a)
-    if typeof(a)=="table" then return a end
-    return a -- string
-  end
-  local function asParagraph(a,b)
-    if typeof(a)=="table" then return a end
-    return {Title=a, Content=b}
-  end
-  local function asBind(a,b,c,d,e)
-    if typeof(a)=="table" then return a end
-    return {Name=a, Default=b, Callback=c, Flag=d, Hold=e}
-  end
-  local function asColor(a,b,c,d,e,f)
-    if typeof(a)=="table" then return a end
-    return {Name=a, Default=b, Callback=c, Flag=d, Info=e, Presets=f}
-  end
-  local function asSection(a)
-    if typeof(a)=="table" then return a end
-    return a
-  end
+  local function asLabel(a) if typeof(a)=="table" then return a end return a end
+  local function asParagraph(a,b) if typeof(a)=="table" then return a end return {Title=a, Content=b} end
+  local function asBind(a,b,c,d,e) if typeof(a)=="table" then return a end return {Name=a, Default=b, Callback=c, Flag=d, Hold=e} end
+  local function asColor(a,b,c,d,e,f) if typeof(a)=="table" then return a end return {Name=a, Default=b, Callback=c, Flag=d, Info=e, Presets=f} end
+  local function asSection(a) if typeof(a)=="table" then return a end return a end
 
   -- ================== API ==================
   local api = {}
@@ -536,7 +610,7 @@ function Window:CreateTab(t)
             end
             setLabelFromSel()
             if x.Flag then local flags=makeFlagTable(Tongkol); flags[x.Flag]=flags[x.Flag] or {}; flags[x.Flag].Value = multi and sel or sel end
-            if x.Callback then if multi then pcall(x.Callback, sel) else pcall(x.Callback, sel) end end
+            if x.Callback then pcall(x.Callback, sel) end
             if not multi then closePopup() end
           end)
         end
@@ -591,10 +665,18 @@ function Window:CreateTab(t)
       if gp then return end
       if box:IsFocused() and input.UserInputType==Enum.UserInputType.Keyboard then setKey(input.KeyCode); box:ReleaseFocus() end
       if input.KeyCode == current then
-        if x.Hold then holding=true else if x.Callback then pcall(x.Callback) end end
+        if x.Hold then
+          holding=true
+        else
+          if x.Callback then pcall(x.Callback) end
+        end
       end
     end)
-    UserInputService.InputEnded:Connect(function(input) if input.KeyCode==current and x.Hold and holding then holding=false; if x.Callback then pcall(x.Callback) end end end)
+    UserInputService.InputEnded:Connect(function(input)
+      if input.KeyCode==current and x.Hold and holding then
+        holding=false; if x.Callback then pcall(x.Callback) end
+      end
+    end)
     attachFlag(Tongkol, x.Flag, setKey, function() return current end, current)
     return { Set=setKey }
   end
