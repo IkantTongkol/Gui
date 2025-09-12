@@ -1,293 +1,10 @@
---// TongkolUI - Fresh from scratch (single file)
---// by: kamu + asistenmu 😄
-
--- Services
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local HttpService = game:GetService("HttpService")
-local Camera = workspace.CurrentCamera
-
---= THEME =======================================================================
-local Theme = {
-  Accent   = Color3.fromRGB(0,170,255),
-  Bg       = Color3.fromRGB(18,19,24),
-  Panel    = Color3.fromRGB(26,28,34),
-  Panel2   = Color3.fromRGB(23,24,30),
-  Stroke   = Color3.fromRGB(60,62,70),
-  Text     = Color3.fromRGB(235,238,245),
-  TextDim  = Color3.fromRGB(170,178,190),
-  Good     = Color3.fromRGB(34,197,94),
-  Bad      = Color3.fromRGB(220,38,38),
-}
-
---= UTILS =======================================================================
-local function corner(inst, r)
-  local c = Instance.new("UICorner")
-  c.CornerRadius = UDim.new(0, r or 10); c.Parent = inst; return c
-end
-local function stroke(inst, tr, col)
-  local s = Instance.new("UIStroke")
-  s.Color = col or Theme.Stroke; s.Thickness = 1; s.Transparency = tr or 0.4
-  s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Parent = inst; return s
-end
-local function pad(inst, p, lr)
-  local pd = Instance.new("UIPadding")
-  pd.PaddingTop = UDim.new(0, p or 8); pd.PaddingBottom = UDim.new(0, p or 8)
-  pd.PaddingLeft = UDim.new(0, lr or 12); pd.PaddingRight = UDim.new(0, lr or 12)
-  pd.Parent = inst; return pd
-end
-local function hasFS()
-  return typeof(writefile)=="function" and typeof(readfile)=="function"
-     and typeof(isfile)=="function" and typeof(isfolder)=="function"
-     and typeof(makefolder)=="function"
-end
-local function ensureGui()
-  local p = Players.LocalPlayer:WaitForChild("PlayerGui")
-  local gui = p:FindFirstChild("TongkolUIRoot")
-  if not gui then
-    gui = Instance.new("ScreenGui")
-    gui.Name = "TongkolUIRoot"
-    gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.DisplayOrder = 1000
-    gui.Parent = p
-  end
-  local pr = gui:FindFirstChild("PopupRoot")
-  if not pr then
-    pr = Instance.new("Frame")
-    pr.Name = "PopupRoot"
-    pr.BackgroundTransparency = 1
-    pr.Size = UDim2.fromScale(1,1)
-    pr.ZIndex = 5000
-    pr.Parent = gui
-  end
-  return gui, pr
-end
-
---= FLAGS & CONFIG ==============================================================
-local Tongkol = {}; Tongkol.__index = Tongkol
-Tongkol.Flags = {}
-
-local function makeFlagTable(lib) lib.Flags = lib.Flags or {}; return lib.Flags end
-local function attachFlag(lib, flagName, setter, getter, initial)
-  if not flagName then return end
-  local flags = makeFlagTable(lib)
-  if not flags[flagName] then
-    flags[flagName] = { Value = initial, Set = function(v) setter(v) end, Get = function() return getter() end }
-  end
-end
-local function encodeFlags()
-  local data = {}
-  for k,entry in pairs(Tongkol.Flags or {}) do
-    local v = entry and (entry.Value ~= nil and entry.Value or entry)
-    if typeof(v)=="Color3" then v = {__c3=true, r=v.R, g=v.G, b=v.B}
-    elseif typeof(v)=="EnumItem" then v = {__e=true, et=v.EnumType.Name, n=v.Name} end
-    data[k] = v
-  end
-  return HttpService:JSONEncode(data)
-end
-local function decodeAndApply(json)
-  if not json or json=="" then return false, "empty" end
-  local ok, data = pcall(HttpService.JSONDecode, HttpService, json)
-  if not ok or type(data)~="table" then return false, "decode" end
-  for k,v in pairs(data) do
-    if type(v)=="table" and v.__c3 then v = Color3.new(v.r, v.g, v.b) end
-    if type(v)=="table" and v.__e and Enum[v.et] and Enum[v.et][v.n] then v = Enum[v.et][v.n] end
-    local entry = Tongkol.Flags and Tongkol.Flags[k]
-    if entry and entry.Set then entry.Set(v) else Tongkol.Flags[k] = Tongkol.Flags[k] or {}; Tongkol.Flags[k].Value = v end
-  end
-  return true
-end
-
-function Tongkol:SetConfigName(name) self._ConfigName = tostring(name or "config") end
-function Tongkol:SaveConfig(window)
-  window = window or self._LastWindow; if not window then return false, "no-window" end
-  if not window._SaveConfig then return false, "disabled" end
-  local folder = tostring(window._ConfigFolder or "TongkolUI")
-  local fname = tostring(self._ConfigName or "config") .. ".json"
-  local body = encodeFlags()
-  if hasFS() then
-    if not isfolder(folder) then makefolder(folder) end
-    writefile(folder.."/"..fname, body); return true
-  else
-    local gui = window._Gui or ensureGui(); gui:SetAttribute("TongkolConfig", body); return true, "attribute"
-  end
-end
-function Tongkol:LoadConfig(window)
-  window = window or self._LastWindow; if not window then return false, "no-window" end
-  local folder = tostring(window._ConfigFolder or "TongkolUI")
-  local fname = tostring(self._ConfigName or "config") .. ".json"
-  local json
-  if hasFS() and isfile(folder.."/"..fname) then json = readfile(folder.."/"..fname)
-  else local gui = window._Gui or ensureGui(); json = gui:GetAttribute("TongkolConfig") end
-  return decodeAndApply(json)
-end
-function Tongkol:EnableAutoSave(window, interval)
-  window = window or self._LastWindow; interval = tonumber(interval) or 2
-  if not window or window._AutoSaveConn then return end
-  local last = ""
-  window._AutoSaveConn = RunService.Heartbeat:Connect(function(dt)
-    window._acc = (window._acc or 0) + dt
-    if window._acc < interval then return end
-    window._acc = 0
-    local snap = encodeFlags()
-    if snap ~= last then last = snap; Tongkol:SaveConfig(window) end
-  end)
-end
-
---= NOTIFICATION ================================================================
-function Tongkol:Notify(d)
-  d = d or {}
-  local gui = ensureGui()
-  local root = gui:FindFirstChild("ToastRoot") or (function()
-    local r = Instance.new("Frame"); r.Name="ToastRoot"; r.BackgroundTransparency=1
-    r.AnchorPoint=Vector2.new(1,1); r.Position=UDim2.new(1,-12,1,-12); r.Size=UDim2.fromScale(1,1); r.Parent=gui; return r
-  end)()
-  local toast = Instance.new("Frame"); toast.AnchorPoint=Vector2.new(1,1); toast.Position=UDim2.new(1,0,1,0)
-  toast.Size=UDim2.fromOffset(300,46); toast.BackgroundColor3=Theme.Panel; toast.BackgroundTransparency=0.05
-  corner(toast,8); stroke(toast,0.5); pad(toast,8); toast.Parent=root
-  local t = Instance.new("TextLabel"); t.BackgroundTransparency=1; t.Font=Enum.Font.GothamMedium; t.TextSize=13; t.TextXAlignment=Enum.TextXAlignment.Left
-  t.TextColor3=Theme.Text; t.Text=d.Title or d.Name or "Info"; t.Position=UDim2.fromOffset(8,4); t.Size=UDim2.fromOffset(284,16); t.Parent=toast
-  local b = Instance.new("TextLabel"); b.BackgroundTransparency=1; b.Font=Enum.Font.Gotham; b.TextSize=12; b.TextXAlignment=Enum.TextXAlignment.Left
-  b.TextColor3=Theme.TextDim; b.Text=d.Content or ""; b.Position=UDim2.fromOffset(8,22); b.Size=UDim2.fromOffset(284,18); b.Parent=toast
-  TweenService:Create(toast, TweenInfo.new(0.18), {Position=UDim2.new(1,-12,1,-12)}):Play()
-  task.delay(d.Time or 2.5, function()
-    TweenService:Create(toast, TweenInfo.new(0.18), {BackgroundTransparency=0.3, Position=UDim2.new(1,0,1,0)}):Play()
-    task.delay(0.2, function() if toast then toast:Destroy() end end)
-  end)
-end
-
-function Tongkol:Init() end
-function Tongkol:Destroy() local gui = ensureGui(); if gui then gui:Destroy() end end
-
---= WINDOW ======================================================================
-local Window = {}; Window.__index = Window
-
-function Tongkol:CreateWindow(opts)
-  if typeof(opts)~="table" then opts = {} end
-  local gui, popupRoot = ensureGui()
-
-  local main = Instance.new("Frame"); main.Name="Main"
-  main.Size = opts.Size or UDim2.fromOffset(640,420)
-  main.Position = UDim2.new(0.5, -main.Size.X.Offset/2, 0.5, -main.Size.Y.Offset/2)
-  main.BackgroundColor3 = Theme.Panel; corner(main,12); stroke(main,0.55); main.Parent = gui
-
-  local header = Instance.new("Frame"); header.Size=UDim2.new(1,0,0,52); header.BackgroundColor3=Theme.Panel2; corner(header,12); header.Parent=main
-  local icon = Instance.new("ImageLabel"); icon.BackgroundTransparency=1; icon.Position=UDim2.fromOffset(12,10); icon.Size=UDim2.fromOffset(28,28)
-  icon.Image = opts.Icon and (type(opts.Icon)=="string" and opts.Icon or ("rbxassetid://"..tostring(opts.Icon))) or ""; icon.ImageTransparency = opts.Icon and 0 or 1; icon.ImageColor3=Theme.Accent; icon.Parent=header
-  local title = Instance.new("TextLabel"); title.BackgroundTransparency=1; title.Position=UDim2.fromOffset(48,8); title.Size=UDim2.fromOffset(520,18)
-  title.Font=Enum.Font.GothamMedium; title.TextSize=14; title.TextXAlignment=Enum.TextXAlignment.Left; title.TextColor3=Theme.Text; title.Text=tostring(opts.Name or "TongkolUI"); title.Parent=header
-  local sub = Instance.new("TextLabel"); sub.BackgroundTransparency=1; sub.Position=UDim2.fromOffset(48,28); sub.Size=UDim2.fromOffset(520,16)
-  sub.Font=Enum.Font.Gotham; sub.TextSize=12; sub.TextXAlignment=Enum.TextXAlignment.Left; sub.TextColor3=Theme.TextDim; sub.Text=tostring(opts.IntroText or ""); sub.Parent=header
-
-  -- buttons (minimize/close)
-  local btnMini = Instance.new("ImageButton"); btnMini.BackgroundTransparency=1; btnMini.Size=UDim2.fromOffset(20,20); btnMini.AnchorPoint=Vector2.new(1,0)
-  btnMini.Position=UDim2.new(1,-44,0,16); btnMini.Image="rbxassetid://6035067836"; btnMini.Parent=header
-  local btnClose = Instance.new("ImageButton"); btnClose.BackgroundTransparency=1; btnClose.Size=UDim2.fromOffset(20,20); btnClose.AnchorPoint=Vector2.new(1,0)
-  btnClose.Position=UDim2.new(1,-20,0,16); btnClose.Image="rbxassetid://3926305904"; btnClose.ImageRectOffset=Vector2.new(284,4); btnClose.ImageRectSize=Vector2.new(24,24); btnClose.Parent=header
-
-  -- drag
-  do
-    local dragging, dragStart, startPos
-    header.InputBegan:Connect(function(input)
-      if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-        dragging=true; dragStart=input.Position; startPos=main.Position
-        input.Changed:Connect(function() if input.UserInputState==Enum.UserInputState.End then dragging=false end end)
-      end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-      if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset+delta.X, startPos.Y.Scale, startPos.Y.Offset+delta.Y)
-      end
-    end)
-  end
-
-  -- nav & content
-  local nav = Instance.new("Frame"); nav.Position=UDim2.fromOffset(0,52); nav.Size=UDim2.new(0,180,1,-52); nav.BackgroundColor3=Theme.Panel2; stroke(nav,0.5); pad(nav,10); nav.Parent=main
-  local navList = Instance.new("UIListLayout"); navList.Padding=UDim.new(0,6); navList.Parent=nav
-  local content = Instance.new("Frame"); content.Position=UDim2.fromOffset(180,52); content.Size=UDim2.new(1,-180,1,-52); content.BackgroundTransparency=1; content.Parent=main
-
-  -- resize handle
-  local rh = Instance.new("Frame"); rh.AnchorPoint=Vector2.new(1,1); rh.Position=UDim2.new(1,-6,1,-6); rh.Size=UDim2.fromOffset(14,14)
-  rh.BackgroundColor3=Theme.Panel2; corner(rh,3); stroke(rh,0.5); rh.Parent=main
-  local resizing=false
-  rh.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then resizing=true end end)
-  rh.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then resizing=false end end)
-  UserInputService.InputChanged:Connect(function(i)
-    if resizing and i.UserInputType==Enum.UserInputType.MouseMovement then
-      local m=UserInputService:GetMouseLocation()
-      local x=math.clamp(m.X-main.AbsolutePosition.X, 520, 1200)
-      local y=math.clamp(m.Y-main.AbsolutePosition.Y, 320, 800)
-      main.Size = UDim2.fromOffset(x,y)
-    end
-  end)
-
-  -- minimize / close
-  local collapsed=false; local fullSize=main.Size
-  local function setCollapsed(state)
-    collapsed = state and true or false
-    if collapsed then
-      fullSize = main.Size
-      nav.Visible=false; content.Visible=false
-      TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size=UDim2.new(fullSize.X.Scale, fullSize.X.Offset, 0, 52)}):Play()
-    else
-      nav.Visible=true; content.Visible=true
-      TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size=fullSize}):Play()
-    end
-  end
-  btnMini.MouseButton1Click:Connect(function() setCollapsed(not collapsed) end)
-  btnClose.MouseButton1Click:Connect(function() (gui.Parent or gui):Destroy() end)
-
-  -- hotkey hide/show
-  local hidden=false
-  local toggleKey = opts.ToggleKey or Enum.KeyCode.RightShift
-  local function hideUI()
-    hidden=true
-    TweenService:Create(main, TweenInfo.new(0.2), {BackgroundTransparency=1, Position=UDim2.new(0.5,-main.Size.X.Offset/2, 1, 12)}):Play()
-    task.delay(0.22, function() main.Visible=false end)
-  end
-  local function showUI()
-    main.Visible=true; hidden=false
-    main.Position = UDim2.new(0.5,-main.Size.X.Offset/2, 1, 12)
-    TweenService:Create(main, TweenInfo.new(0.22), {BackgroundTransparency=0, Position=UDim2.new(0.5,-main.Size.X.Offset/2,0.5,-main.Size.Y.Offset/2)}):Play()
-  end
-  UserInputService.InputBegan:Connect(function(input, gp)
-    if not gp and input.KeyCode==toggleKey then if hidden then showUI() else hideUI() end end
-  end)
-
-  local self = setmetatable({
-    _Gui = gui, _PopupRoot = popupRoot, _Main = main, _Nav = nav, _Content = content,
-    _Tabs = {}, _CurrentTab=nil,
-    _SaveConfig = (opts.SaveConfig ~= false), _ConfigFolder = opts.ConfigFolder or "TongkolUI",
-  }, Window)
-
-  Tongkol._LastWindow = self
-  return self
-end
-
---= helpers for tabs/controls ===================================================
-local function makeNavButton(parent, name)
-  local b = Instance.new("TextButton")
-  b.Size=UDim2.new(1,-4,0,32); b.BackgroundColor3=Theme.Panel; b.Text=name
-  b.TextColor3=Theme.Text; b.TextSize=12; b.Font=Enum.Font.Gotham; b.AutoButtonColor=false
-  corner(b,8); stroke(b,0.5); b.Parent=parent; return b
-end
-local function makeScroll(parent)
-  local sc = Instance.new("ScrollingFrame")
-  sc.Active=true; sc.CanvasSize=UDim2.new(0,0,0,0); sc.AutomaticCanvasSize=Enum.AutomaticSize.Y
-  sc.ScrollBarThickness=5; sc.BorderSizePixel=0; sc.BackgroundTransparency=1
-  sc.Size=UDim2.new(1,-24,1,-24); sc.Position=UDim2.fromOffset(12,12)
-  local list=Instance.new("UIListLayout"); list.Padding=UDim.new(0,8); list.SortOrder=Enum.SortOrder.LayoutOrder; list.Parent=sc
-  return sc
-end
-
 --= TAB API =====================================================================
 function Window:CreateTab(t)
-  t = t or {}; local tabName = t.Name or "Tab"
+  -- boleh string atau table
+  if typeof(t) ~= "table" then t = { Name = t } end
+  t = t or {}
+  local tabName = t.Name or "Tab"
+
   local navBtn = makeNavButton(self._Nav, tabName)
 
   local page = Instance.new("Frame"); page.Visible=false; page.BackgroundTransparency=1; page.Size=UDim2.fromScale(1,1); page.Parent=self._Content
@@ -344,78 +61,122 @@ function Window:CreateTab(t)
     lbl.Size=UDim2.new(1,-200,1,0); lbl.Parent=parent; return lbl
   end
 
+  -- ===== helpers: coerce positional -> table
+  local function asToggle(a,b,c,d,e,f)
+    if typeof(a)=="table" then return a end
+    return {Name=a, Flag=b, Default=c, Callback=d, Info=e, Color=f}
+  end
+  local function asSlider(a,b,c,d,e,f,g,h,i)
+    if typeof(a)=="table" then return a end
+    return {Name=a, Min=b, Max=c, Default=d, Increment=e, Callback=f, Flag=g, ValueName=h, Color=i}
+  end
+  local function asDropdown(a,b,c,d,e,f)
+    if typeof(a)=="table" then return a end
+    return {Name=a, Options=b, Default=c, Callback=d, Flag=e, Multiple=f}
+  end
+  local function asTextbox(a,b,c,d,e,f)
+    if typeof(a)=="table" then return a end
+    return {Name=a, Default=b, Placeholder=c, Callback=d, Flag=e, TextDisappear=f}
+  end
+  local function asButton(a,b,c,d)
+    if typeof(a)=="table" then return a end
+    return {Name=a, Callback=b, ButtonName=c, Info=d}
+  end
+  local function asLabel(a)
+    if typeof(a)=="table" then return a end
+    return a -- string
+  end
+  local function asParagraph(a,b)
+    if typeof(a)=="table" then return a end
+    return {Title=a, Content=b}
+  end
+  local function asBind(a,b,c,d,e)
+    if typeof(a)=="table" then return a end
+    return {Name=a, Default=b, Callback=c, Flag=d, Hold=e}
+  end
+  local function asColor(a,b,c,d,e,f)
+    if typeof(a)=="table" then return a end
+    return {Name=a, Default=b, Callback=c, Flag=d, Info=e, Presets=f}
+  end
+  local function asSection(a)
+    if typeof(a)=="table" then return a end
+    return a
+  end
+
+  -- ================== API ==================
   local api = {}
 
-  function api:AddSection(d)
+  function api:AddSection(a)
+    local name = (typeof(a)=="table" and a.Name) or asSection(a) or "Section"
     local c = card(28)
-    local name=(typeof(d)=="table" and d.Name) or d or "Section"
     local t=Instance.new("TextLabel"); t.BackgroundTransparency=1; t.TextXAlignment=Enum.TextXAlignment.Left; t.Font=Enum.Font.GothamMedium; t.TextSize=12; t.TextColor3=Theme.Text; t.Text=name; t.Parent=c
   end
 
-  function api:AddLabel(a)
-    local text=(typeof(a)=="table" and a.Name) or a or "Label"
+  function api:AddLabel(a, ...)
+    local d = asLabel(a, ...)
+    local text=(typeof(d)=="table" and d.Name) or d or "Label"
     local c=card(32)
     local t=Instance.new("TextLabel"); t.BackgroundTransparency=1; t.TextXAlignment=Enum.TextXAlignment.Left; t.Font=Enum.Font.Gotham; t.TextSize=12; t.TextColor3=Theme.Text; t.Text=text; t.Parent=c
     return { Set=function(v) t.Text=v end }
   end
 
-  function api:AddParagraph(a,b)
-    local d=(typeof(a)=="table") and a or {Title=a, Content=b}
+  function api:AddParagraph(a, b)
+    local d=asParagraph(a,b)
     local c=card(86)
     local tl=Instance.new("TextLabel"); tl.BackgroundTransparency=1; tl.TextXAlignment=Enum.TextXAlignment.Left; tl.Font=Enum.Font.GothamMedium; tl.TextSize=12; tl.TextColor3=Theme.Text; tl.Text=(d.Title or ""); tl.Size=UDim2.new(1,-8,0,18); tl.Parent=c
     local tx=Instance.new("TextLabel"); tx.BackgroundTransparency=1; tx.TextXAlignment=Enum.TextXAlignment.Left; tx.TextYAlignment=Enum.TextYAlignment.Top; tx.TextWrapped=true; tx.Font=Enum.Font.Gotham; tx.TextSize=12; tx.TextColor3=Theme.TextDim; tx.Text=(d.Content or ""); tx.Position=UDim2.fromOffset(0,22); tx.Size=UDim2.new(1,-8,1,-26); tx.Parent=c
     return { Set=function(dd) tl.Text=dd.Title or tl.Text; tx.Text=dd.Content or tx.Text end }
   end
 
-  function api:AddButton(d)
-    d=d or {}
-    local c=card(48); header(c, d.Name or "Button")
-    local b=Instance.new("TextButton"); b.AnchorPoint=Vector2.new(1,0.5); b.Position=UDim2.new(1,-12,0.5,0); b.Size=UDim2.fromOffset(120,28)
-    b.Text=d.ButtonName or "Run"; b.Font=Enum.Font.Gotham; b.TextSize=12; b.TextColor3=Theme.Text; b.BackgroundColor3=Theme.Panel; b.BackgroundTransparency=0.1; b.AutoButtonColor=false; corner(b,8); stroke(b,0.5); b.Parent=c
-    b.MouseButton1Click:Connect(function() if d.Callback then pcall(d.Callback) end end)
+  function api:AddButton(a, b, c, d)
+    local x=asButton(a,b,c,d)
+    local cfr=card(48); header(cfr, x.Name or "Button")
+    local btn=Instance.new("TextButton"); btn.AnchorPoint=Vector2.new(1,0.5); btn.Position=UDim2.new(1,-12,0.5,0); btn.Size=UDim2.fromOffset(120,28)
+    btn.Text=x.ButtonName or "Run"; btn.Font=Enum.Font.Gotham; btn.TextSize=12; btn.TextColor3=Theme.Text; btn.BackgroundColor3=Theme.Panel; btn.BackgroundTransparency=0.1; btn.AutoButtonColor=false; corner(btn,8); stroke(btn,0.5); btn.Parent=cfr
+    btn.MouseButton1Click:Connect(function() if x.Callback then pcall(x.Callback) end end)
     return {}
   end
 
-  function api:AddToggle(d)
-    d=d or {}
-    local c=card(56); header(c, d.Name or "Toggle", d.Info)
-    local accent=d.Color or Theme.Accent
+  function api:AddToggle(a, b, c, d, e, f)
+    local x=asToggle(a,b,c,d,e,f)
+    local cfr=card(56); header(cfr, x.Name or "Toggle", x.Info)
+    local accent=x.Color or Theme.Accent
     local sw=Instance.new("TextButton"); sw.Size=UDim2.fromOffset(56,28); sw.AnchorPoint=Vector2.new(1,0.5); sw.Position=UDim2.new(1,-12,0.5,0); sw.Text=""; sw.AutoButtonColor=false
-    sw.BackgroundColor3=(d.Default and accent) or Color3.fromRGB(60,62,70); corner(sw,14); stroke(sw,0.5); sw.Parent=c
-    local knob=Instance.new("Frame"); knob.Size=UDim2.fromOffset(22,22); knob.Position=(d.Default and UDim2.fromOffset(30,3)) or UDim2.fromOffset(4,3); knob.BackgroundColor3=Color3.fromRGB(240,240,240); corner(knob,11); knob.Parent=sw
-    local on=d.Default or false
+    sw.BackgroundColor3=(x.Default and accent) or Color3.fromRGB(60,62,70); corner(sw,14); stroke(sw,0.5); sw.Parent=cfr
+    local knob=Instance.new("Frame"); knob.Size=UDim2.fromOffset(22,22); knob.Position=(x.Default and UDim2.fromOffset(30,3)) or UDim2.fromOffset(4,3); knob.BackgroundColor3=Color3.fromRGB(240,240,240); corner(knob,11); knob.Parent=sw
+    local on=x.Default or false
     local function set(v)
       on = v and true or false
       sw.BackgroundColor3 = on and accent or Color3.fromRGB(60,62,70)
       knob.Position = on and UDim2.fromOffset(30,3) or UDim2.fromOffset(4,3)
-      if d.Flag then local flags=makeFlagTable(Tongkol); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value=on end
-      if d.Callback then pcall(d.Callback, on) end
+      if x.Flag then local flags=makeFlagTable(Tongkol); flags[x.Flag]=flags[x.Flag] or {}; flags[x.Flag].Value=on end
+      if x.Callback then pcall(x.Callback, on) end
     end
     sw.MouseButton1Click:Connect(function() set(not on) end)
-    attachFlag(Tongkol, d.Flag, set, function() return on end, on); set(on)
+    attachFlag(Tongkol, x.Flag, set, function() return on end, on); set(on)
     return { Set=set }
   end
 
-  function api:AddSlider(d)
-    d=d or {}
-    local min,max = d.Min or 0, d.Max or 100
-    local inc = math.max(1, d.Increment or 1)
-    local def = d.Default or min
-    local c=card(68)
-    local vn=d.ValueName
-    header(c, d.Name or "Slider", (vn and (vn..": ") or "")..string.format("%d–%d", min, max))
+  function api:AddSlider(a,b,c,d,e,f,g,h,i)
+    local x=asSlider(a,b,c,d,e,f,g,h,i)
+    local min,max = x.Min or 0, x.Max or 100
+    local inc = math.max(1, x.Increment or 1)
+    local def = x.Default or min
+    local cfr=card(68)
+    local vn=x.ValueName
+    header(cfr, x.Name or "Slider", (vn and (vn..": ") or "")..string.format("%d–%d", min, max))
     local valLbl=Instance.new("TextLabel"); valLbl.BackgroundTransparency=1; valLbl.AnchorPoint=Vector2.new(1,0); valLbl.Position=UDim2.new(1,-12,0,0); valLbl.Size=UDim2.fromOffset(100,16)
-    valLbl.Font=Enum.Font.Gotham; valLbl.TextSize=12; valLbl.TextColor3=Theme.TextDim; valLbl.TextXAlignment=Enum.TextXAlignment.Right; valLbl.Parent=c
-    local track=Instance.new("Frame"); track.Size=UDim2.new(1,-24,0,6); track.Position=UDim2.fromOffset(12,38); track.BackgroundColor3=Color3.fromRGB(60,62,70); corner(track,3); track.Parent=c
-    local fill=Instance.new("Frame"); fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=d.Color or Theme.Accent; corner(fill,3); fill.Parent=track
+    valLbl.Font=Enum.Font.Gotham; valLbl.TextSize=12; valLbl.TextColor3=Theme.TextDim; valLbl.TextXAlignment=Enum.TextXAlignment.Right; valLbl.Parent=cfr
+    local track=Instance.new("Frame"); track.Size=UDim2.new(1,-24,0,6); track.Position=UDim2.fromOffset(12,38); track.BackgroundColor3=Color3.fromRGB(60,62,70); corner(track,3); track.Parent=cfr
+    local fill=Instance.new("Frame"); fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=x.Color or Theme.Accent; corner(fill,3); fill.Parent=track
     local knob=Instance.new("Frame"); knob.Size=UDim2.fromOffset(14,14); knob.AnchorPoint=Vector2.new(0.5,0.5); knob.Position=UDim2.new(0,0,0.5,0); knob.BackgroundColor3=Color3.fromRGB(240,240,240); corner(knob,7); knob.Parent=track
     local value=def
     local function roundStep(v) v=math.clamp(v,min,max); local n=math.floor((v-min)/inc+0.5)*inc + min; return math.clamp(n,min,max) end
     local function set(v)
       value=roundStep(v); local a=(value-min)/(max-min)
       fill.Size=UDim2.new(a,0,1,0); knob.Position=UDim2.new(a,0,0.5,0); valLbl.Text=tostring(value)
-      if d.Flag then local flags=makeFlagTable(Tongkol); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value=value end
-      if d.Callback then pcall(d.Callback, value) end
+      if x.Flag then local flags=makeFlagTable(Tongkol); flags[x.Flag]=flags[x.Flag] or {}; flags[x.Flag].Value=value end
+      if x.Callback then pcall(x.Callback, value) end
     end
     local dragging=false
     track.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=true end end)
@@ -426,29 +187,29 @@ function Window:CreateTab(t)
         set(min + rel*(max - min))
       end
     end)
-    attachFlag(Tongkol, d.Flag, set, function() return value end, value); set(def)
+    attachFlag(Tongkol, x.Flag, set, function() return value end, value); set(def)
     return { Set=set }
   end
 
-  function api:AddDropdown(d)
-    d=d or {}
+  function api:AddDropdown(a,b,c,d,e,f)
+    local x=asDropdown(a,b,c,d,e,f)
     local items={}
-    for _,v in ipairs(d.Options or {"A","B"}) do table.insert(items,v) end
-    local multi = d.Multiple or d.MultipleOptions or (typeof(d.Default)=="table")
-    local sel = multi and (d.Default or {}) or (d.Default or items[1])
+    for _,v in ipairs(x.Options or {"A","B"}) do table.insert(items,v) end
+    local multi = x.Multiple or x.MultipleOptions or (typeof(x.Default)=="table")
+    local sel = multi and (x.Default or {}) or (x.Default or items[1])
 
-    local c=card(56); header(c, d.Name or "Dropdown")
+    local cfr=card(56); header(cfr, x.Name or "Dropdown")
     local btn=Instance.new("TextButton"); btn.AnchorPoint=Vector2.new(1,0.5); btn.Position=UDim2.new(1,-12,0.5,0); btn.Size=UDim2.fromOffset(220,28)
     btn.Text = (multi and (#sel==0 and "None" or (#sel==1 and sel[1] or "Various"))) or (sel or "")
-    btn.Font=Enum.Font.Gotham; btn.TextSize=12; btn.TextColor3=Theme.Text; btn.BackgroundColor3=Theme.Panel; btn.BackgroundTransparency=0.1; btn.AutoButtonColor=false; corner(btn,8); stroke(btn,0.5); btn.Parent=c
+    btn.Font=Enum.Font.Gotham; btn.TextSize=12; btn.TextColor3=Theme.Text; btn.BackgroundColor3=Theme.Panel; btn.BackgroundTransparency=0.1; btn.AutoButtonColor=false; corner(btn,8); stroke(btn,0.5); btn.Parent=cfr
 
     local popupRoot=self._PopupRoot
     local currentPopup
     local function closePopup() if currentPopup then currentPopup:Destroy(); currentPopup=nil end end
 
-    local function clampMenuPos(x,y,w,h)
+    local function clampMenuPos(xp,yp,w,h)
       local vs=Camera and Camera.ViewportSize or Vector2.new(1920,1080)
-      local nx=math.clamp(x,8,vs.X-w-8); local ny=math.clamp(y,8,vs.Y-h-8); return nx,ny
+      local nx=math.clamp(xp,8,vs.X-w-8); local ny=math.clamp(yp,8,vs.Y-h-8); return nx,ny
     end
 
     local function setLabelFromSel()
@@ -487,8 +248,8 @@ function Window:CreateTab(t)
               sel = it
             end
             setLabelFromSel()
-            if d.Flag then local flags=makeFlagTable(Tongkol); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value = multi and sel or sel end
-            if d.Callback then if multi then pcall(d.Callback, sel) else pcall(d.Callback, sel) end end
+            if x.Flag then local flags=makeFlagTable(Tongkol); flags[x.Flag]=flags[x.Flag] or {}; flags[x.Flag].Value = multi and sel or sel end
+            if x.Callback then if multi then pcall(x.Callback, sel) else pcall(x.Callback, sel) end end
             if not multi then closePopup() end
           end)
         end
@@ -500,42 +261,42 @@ function Window:CreateTab(t)
 
     btn.MouseButton1Click:Connect(function() if currentPopup then closePopup() else openPopup() end end)
     setLabelFromSel()
-    attachFlag(Tongkol, d.Flag, function(v) sel=v; setLabelFromSel() end, function() return sel end, sel)
+    attachFlag(Tongkol, x.Flag, function(v) sel=v; setLabelFromSel() end, function() return sel end, sel)
 
     return {
       Set = function(v) sel=v; setLabelFromSel() end,
       Add = function(v) table.insert(items, v) end,
       Remove = function(v)
-        for k,x in ipairs(items) do if x==v then table.remove(items,k) break end end
+        for k,xv in ipairs(items) do if xv==v then table.remove(items,k) break end end
         if not multi and sel==v then sel=items[1]; setLabelFromSel() end
       end
     }
   end
 
-  function api:AddTextbox(d)
-    d=d or {}
-    local c=card(56); header(c, d.Name or "Textbox")
-    local box=Instance.new("TextBox"); box.AnchorPoint=Vector2.new(1,0.5); box.Position=UDim2.new(1,-12,0.5,0); box.Size=UDim2.fromOffset(220,28)
-    box.Text=d.Default or ""; box.PlaceholderText=d.Placeholder or (d.Default and "" or "Ketik..."); box.ClearTextOnFocus=d.TextDisappear or false
-    box.Font=Enum.Font.Gotham; box.TextSize=12; box.TextColor3=Theme.Text; box.BackgroundColor3=Theme.Panel; box.BackgroundTransparency=0.1; corner(box,8); stroke(box,0.5); box.Parent=c
-    local function setText(t) box.Text=t or ""; if d.Flag then local flags=makeFlagTable(Tongkol); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value=box.Text end end
-    box.FocusLost:Connect(function() if d.Callback then pcall(d.Callback, box.Text) end if d.TextDisappear then box.Text="" end end)
-    attachFlag(Tongkol, d.Flag, setText, function() return box.Text end, box.Text)
+  function api:AddTextbox(a,b,c,d,e,f)
+    local x=asTextbox(a,b,c,d,e,f)
+    local cfr=card(56); header(cfr, x.Name or "Textbox")
+    local tb=Instance.new("TextBox"); tb.AnchorPoint=Vector2.new(1,0.5); tb.Position=UDim2.new(1,-12,0.5,0); tb.Size=UDim2.fromOffset(220,28)
+    tb.Text=x.Default or ""; tb.PlaceholderText=x.Placeholder or (x.Default and "" or "Ketik..."); tb.ClearTextOnFocus=x.TextDisappear or false
+    tb.Font=Enum.Font.Gotham; tb.TextSize=12; tb.TextColor3=Theme.Text; tb.BackgroundColor3=Theme.Panel; tb.BackgroundTransparency=0.1; corner(tb,8); stroke(tb,0.5); tb.Parent=cfr
+    local function setText(tk) tb.Text=tk or ""; if x.Flag then local flags=makeFlagTable(Tongkol); flags[x.Flag]=flags[x.Flag] or {}; flags[x.Flag].Value=tb.Text end end
+    tb.FocusLost:Connect(function() if x.Callback then pcall(x.Callback, tb.Text) end if x.TextDisappear then tb.Text="" end end)
+    attachFlag(Tongkol, x.Flag, setText, function() return tb.Text end, tb.Text)
     return { Set=setText }
   end
 
-  function api:AddKeybind(d)
-    d=d or {}
-    local c=card(56); header(c, d.Name or "Keybind")
+  function api:AddKeybind(a,b,c,d,e)
+    local x=asBind(a,b,c,d,e)
+    local cfr=card(56); header(cfr, x.Name or "Keybind")
     local box=Instance.new("TextBox"); box.AnchorPoint=Vector2.new(1,0.5); box.Position=UDim2.new(1,-12,0.5,0); box.Size=UDim2.fromOffset(220,28)
-    local current = d.Default or Enum.KeyCode.K
+    local current = x.Default or Enum.KeyCode.K
     box.Text = typeof(current)=="EnumItem" and current.Name or tostring(current)
-    box.ClearTextOnFocus=false; box.Font=Enum.Font.Gotham; box.TextSize=12; box.TextColor3=Theme.Text; box.BackgroundColor3=Theme.Panel; box.BackgroundTransparency=0.1; corner(box,8); stroke(box,0.5); box.Parent=c
+    box.ClearTextOnFocus=false; box.Font=Enum.Font.Gotham; box.TextSize=12; box.TextColor3=Theme.Text; box.BackgroundColor3=Theme.Panel; box.BackgroundTransparency=0.1; corner(box,8); stroke(box,0.5); box.Parent=cfr
     local holding=false
     local function setKey(kc)
       current = kc
       box.Text = kc and (typeof(kc)=="EnumItem" and kc.Name or tostring(kc)) or "(none)"
-      if d.Flag then local flags=makeFlagTable(Tongkol); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value=current end
+      if x.Flag then local flags=makeFlagTable(Tongkol); flags[x.Flag]=flags[x.Flag] or {}; flags[x.Flag].Value=current end
     end
     box.Focused:Connect(function() box.Text="Tekan tombol..." end)
     box.FocusLost:Connect(function() box.Text = (typeof(current)=="EnumItem" and current.Name) or tostring(current) end)
@@ -543,38 +304,46 @@ function Window:CreateTab(t)
       if gp then return end
       if box:IsFocused() and input.UserInputType==Enum.UserInputType.Keyboard then setKey(input.KeyCode); box:ReleaseFocus() end
       if input.KeyCode == current then
-        if d.Hold then holding=true else if d.Callback then pcall(d.Callback) end end
+        if x.Hold then holding=true else if x.Callback then pcall(x.Callback) end end
       end
     end)
-    UserInputService.InputEnded:Connect(function(input) if input.KeyCode==current and d.Hold and holding then holding=false; if d.Callback then pcall(d.Callback) end end end)
-    attachFlag(Tongkol, d.Flag, setKey, function() return current end, current)
+    UserInputService.InputEnded:Connect(function(input) if input.KeyCode==current and x.Hold and holding then holding=false; if x.Callback then pcall(x.Callback) end end end)
+    attachFlag(Tongkol, x.Flag, setKey, function() return current end, current)
     return { Set=setKey }
   end
 
-  function api:AddColorpicker(d)
-    d=d or {}
-    local c=card(74); header(c, d.Name or "Color", d.Info)
+  function api:AddColorpicker(a,b,c,d,e,f)
+    local x=asColor(a,b,c,d,e,f)
+    local cfr=card(74); header(cfr, x.Name or "Color", x.Info)
     local swatch=Instance.new("TextButton"); swatch.AnchorPoint=Vector2.new(1,0); swatch.Position=UDim2.new(1,-12,0,0); swatch.Size=UDim2.fromOffset(160,28); swatch.Text=""
-    swatch.BackgroundColor3=d.Default or Theme.Accent; corner(swatch,8); stroke(swatch,0.5); swatch.Parent=c
-    local row=Instance.new("Frame"); row.BackgroundTransparency=1; row.Size=UDim2.new(1,-24,0,28); row.Position=UDim2.fromOffset(12,36); row.Parent=c
+    swatch.BackgroundColor3=x.Default or Theme.Accent; corner(swatch,8); stroke(swatch,0.5); swatch.Parent=cfr
+    local row=Instance.new("Frame"); row.BackgroundTransparency=1; row.Size=UDim2.new(1,-24,0,28); row.Position=UDim2.fromOffset(12,36); row.Parent=cfr
     local list=Instance.new("UIListLayout"); list.FillDirection=Enum.FillDirection.Horizontal; list.Padding=UDim.new(0,6); list.Parent=row
-    local presets = d.Presets or {Color3.fromRGB(0,170,255), Color3.fromRGB(124,58,237), Color3.fromRGB(34,197,94), Color3.fromRGB(14,165,233), Color3.fromRGB(249,115,22), Color3.fromRGB(225,29,72)}
+    local presets = x.Presets or {Color3.fromRGB(0,170,255), Color3.fromRGB(124,58,237), Color3.fromRGB(34,197,94), Color3.fromRGB(14,165,233), Color3.fromRGB(249,115,22), Color3.fromRGB(225,29,72)}
     for _,col in ipairs(presets) do
       local p=Instance.new("TextButton"); p.Size=UDim2.fromOffset(28,28); p.Text=""; p.AutoButtonColor=false; p.BackgroundColor3=col; corner(p,6); stroke(p,0.5); p.Parent=row
       p.MouseButton1Click:Connect(function()
         swatch.BackgroundColor3=col
-        if d.Flag then local flags=makeFlagTable(Tongkol); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value=col end
-        if d.Callback then pcall(d.Callback, col) end
+        if x.Flag then local flags=makeFlagTable(Tongkol); flags[x.Flag]=flags[x.Flag] or {}; flags[x.Flag].Value=col end
+        if x.Callback then pcall(x.Callback, col) end
       end)
     end
-    local function set(col) swatch.BackgroundColor3=col; if d.Callback then pcall(d.Callback,col) end end
-    attachFlag(Tongkol, d.Flag, set, function() return swatch.BackgroundColor3 end, swatch.BackgroundColor3)
+    local function set(col) swatch.BackgroundColor3=col; if x.Callback then pcall(x.Callback,col) end end
+    attachFlag(Tongkol, x.Flag, set, function() return swatch.BackgroundColor3 end, swatch.BackgroundColor3)
     return { Set=set }
   end
 
+  -- Rayfield-style aliases (opsional)
+  api.CreateToggle      = api.AddToggle
+  api.CreateSlider      = api.AddSlider
+  api.CreateDropdown    = api.AddDropdown
+  api.CreateInput       = api.AddTextbox
+  api.CreateButton      = api.AddButton
+  api.CreateLabel       = api.AddLabel
+  api.CreateParagraph   = api.AddParagraph
+  api.CreateKeybind     = api.AddKeybind
+  api.CreateColorPicker = api.AddColorpicker
+  api.CreateSection     = api.AddSection
+
   return api
 end
-
---= EXPORT ======================================================================
-local M = setmetatable({ Flags = Tongkol.Flags }, Tongkol)
-return M
