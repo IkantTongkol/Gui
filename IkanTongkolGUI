@@ -1,3 +1,290 @@
+--// TongkolUI - Fresh from scratch (single file)
+--// by: kamu + asistenmu 😄
+
+-- Services
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local Camera = workspace.CurrentCamera
+
+--= THEME =======================================================================
+local Theme = {
+  Accent   = Color3.fromRGB(0,170,255),
+  Bg       = Color3.fromRGB(18,19,24),
+  Panel    = Color3.fromRGB(26,28,34),
+  Panel2   = Color3.fromRGB(23,24,30),
+  Stroke   = Color3.fromRGB(60,62,70),
+  Text     = Color3.fromRGB(235,238,245),
+  TextDim  = Color3.fromRGB(170,178,190),
+  Good     = Color3.fromRGB(34,197,94),
+  Bad      = Color3.fromRGB(220,38,38),
+}
+
+--= UTILS =======================================================================
+local function corner(inst, r)
+  local c = Instance.new("UICorner")
+  c.CornerRadius = UDim.new(0, r or 10); c.Parent = inst; return c
+end
+local function stroke(inst, tr, col)
+  local s = Instance.new("UIStroke")
+  s.Color = col or Theme.Stroke; s.Thickness = 1; s.Transparency = tr or 0.4
+  s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Parent = inst; return s
+end
+local function pad(inst, p, lr)
+  local pd = Instance.new("UIPadding")
+  pd.PaddingTop = UDim.new(0, p or 8); pd.PaddingBottom = UDim.new(0, p or 8)
+  pd.PaddingLeft = UDim.new(0, lr or 12); pd.PaddingRight = UDim.new(0, lr or 12)
+  pd.Parent = inst; return pd
+end
+local function hasFS()
+  return typeof(writefile)=="function" and typeof(readfile)=="function"
+     and typeof(isfile)=="function" and typeof(isfolder)=="function"
+     and typeof(makefolder)=="function"
+end
+local function ensureGui()
+  local p = Players.LocalPlayer:WaitForChild("PlayerGui")
+  local gui = p:FindFirstChild("TongkolUIRoot")
+  if not gui then
+    gui = Instance.new("ScreenGui")
+    gui.Name = "TongkolUIRoot"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.DisplayOrder = 1000
+    gui.Parent = p
+  end
+  local pr = gui:FindFirstChild("PopupRoot")
+  if not pr then
+    pr = Instance.new("Frame")
+    pr.Name = "PopupRoot"
+    pr.BackgroundTransparency = 1
+    pr.Size = UDim2.fromScale(1,1)
+    pr.ZIndex = 5000
+    pr.Parent = gui
+  end
+  return gui, pr
+end
+
+--= FLAGS & CONFIG ==============================================================
+local Tongkol = {}; Tongkol.__index = Tongkol
+Tongkol.Flags = {}
+
+local function makeFlagTable(lib) lib.Flags = lib.Flags or {}; return lib.Flags end
+local function attachFlag(lib, flagName, setter, getter, initial)
+  if not flagName then return end
+  local flags = makeFlagTable(lib)
+  if not flags[flagName] then
+    flags[flagName] = { Value = initial, Set = function(v) setter(v) end, Get = function() return getter() end }
+  end
+end
+local function encodeFlags()
+  local data = {}
+  for k,entry in pairs(Tongkol.Flags or {}) do
+    local v = entry and (entry.Value ~= nil and entry.Value or entry)
+    if typeof(v)=="Color3" then v = {__c3=true, r=v.R, g=v.G, b=v.B}
+    elseif typeof(v)=="EnumItem" then v = {__e=true, et=v.EnumType.Name, n=v.Name} end
+    data[k] = v
+  end
+  return HttpService:JSONEncode(data)
+end
+local function decodeAndApply(json)
+  if not json or json=="" then return false, "empty" end
+  local ok, data = pcall(HttpService.JSONDecode, HttpService, json)
+  if not ok or type(data)~="table" then return false, "decode" end
+  for k,v in pairs(data) do
+    if type(v)=="table" and v.__c3 then v = Color3.new(v.r, v.g, v.b) end
+    if type(v)=="table" and v.__e and Enum[v.et] and Enum[v.et][v.n] then v = Enum[v.et][v.n] end
+    local entry = Tongkol.Flags and Tongkol.Flags[k]
+    if entry and entry.Set then entry.Set(v) else Tongkol.Flags[k] = Tongkol.Flags[k] or {}; Tongkol.Flags[k].Value = v end
+  end
+  return true
+end
+
+function Tongkol:SetConfigName(name) self._ConfigName = tostring(name or "config") end
+function Tongkol:SaveConfig(window)
+  window = window or self._LastWindow; if not window then return false, "no-window" end
+  if not window._SaveConfig then return false, "disabled" end
+  local folder = tostring(window._ConfigFolder or "TongkolUI")
+  local fname = tostring(self._ConfigName or "config") .. ".json"
+  local body = encodeFlags()
+  if hasFS() then
+    if not isfolder(folder) then makefolder(folder) end
+    writefile(folder.."/"..fname, body); return true
+  else
+    local gui = window._Gui or ensureGui(); gui:SetAttribute("TongkolConfig", body); return true, "attribute"
+  end
+end
+function Tongkol:LoadConfig(window)
+  window = window or self._LastWindow; if not window then return false, "no-window" end
+  local folder = tostring(window._ConfigFolder or "TongkolUI")
+  local fname = tostring(self._ConfigName or "config") .. ".json"
+  local json
+  if hasFS() and isfile(folder.."/"..fname) then json = readfile(folder.."/"..fname)
+  else local gui = window._Gui or ensureGui(); json = gui:GetAttribute("TongkolConfig") end
+  return decodeAndApply(json)
+end
+function Tongkol:EnableAutoSave(window, interval)
+  window = window or self._LastWindow; interval = tonumber(interval) or 2
+  if not window or window._AutoSaveConn then return end
+  local last = ""
+  window._AutoSaveConn = RunService.Heartbeat:Connect(function(dt)
+    window._acc = (window._acc or 0) + dt
+    if window._acc < interval then return end
+    window._acc = 0
+    local snap = encodeFlags()
+    if snap ~= last then last = snap; Tongkol:SaveConfig(window) end
+  end)
+end
+
+--= NOTIFICATION ================================================================
+function Tongkol:Notify(d)
+  d = d or {}
+  local gui = ensureGui()
+  local root = gui:FindFirstChild("ToastRoot") or (function()
+    local r = Instance.new("Frame"); r.Name="ToastRoot"; r.BackgroundTransparency=1
+    r.AnchorPoint=Vector2.new(1,1); r.Position=UDim2.new(1,-12,1,-12); r.Size=UDim2.fromScale(1,1); r.Parent=gui; return r
+  end)()
+  local toast = Instance.new("Frame"); toast.AnchorPoint=Vector2.new(1,1); toast.Position=UDim2.new(1,0,1,0)
+  toast.Size=UDim2.fromOffset(300,46); toast.BackgroundColor3=Theme.Panel; toast.BackgroundTransparency=0.05
+  corner(toast,8); stroke(toast,0.5); pad(toast,8); toast.Parent=root
+  local t = Instance.new("TextLabel"); t.BackgroundTransparency=1; t.Font=Enum.Font.GothamMedium; t.TextSize=13; t.TextXAlignment=Enum.TextXAlignment.Left
+  t.TextColor3=Theme.Text; t.Text=d.Title or d.Name or "Info"; t.Position=UDim2.fromOffset(8,4); t.Size=UDim2.fromOffset(284,16); t.Parent=toast
+  local b = Instance.new("TextLabel"); b.BackgroundTransparency=1; b.Font=Enum.Font.Gotham; b.TextSize=12; b.TextXAlignment=Enum.TextXAlignment.Left
+  b.TextColor3=Theme.TextDim; b.Text=d.Content or ""; b.Position=UDim2.fromOffset(8,22); b.Size=UDim2.fromOffset(284,18); b.Parent=toast
+  TweenService:Create(toast, TweenInfo.new(0.18), {Position=UDim2.new(1,-12,1,-12)}):Play()
+  task.delay(d.Time or 2.5, function()
+    TweenService:Create(toast, TweenInfo.new(0.18), {BackgroundTransparency=0.3, Position=UDim2.new(1,0,1,0)}):Play()
+    task.delay(0.2, function() if toast then toast:Destroy() end end)
+  end)
+end
+
+function Tongkol:Init() end
+function Tongkol:Destroy() local gui = ensureGui(); if gui then gui:Destroy() end end
+
+--= WINDOW ======================================================================
+local Window = {}; Window.__index = Window
+
+function Tongkol:CreateWindow(opts)
+  if typeof(opts)~="table" then opts = {} end
+  local gui, popupRoot = ensureGui()
+
+  local main = Instance.new("Frame"); main.Name="Main"
+  main.Size = opts.Size or UDim2.fromOffset(640,420)
+  main.Position = UDim2.new(0.5, -main.Size.X.Offset/2, 0.5, -main.Size.Y.Offset/2)
+  main.BackgroundColor3 = Theme.Panel; corner(main,12); stroke(main,0.55); main.Parent = gui
+
+  local header = Instance.new("Frame"); header.Size=UDim2.new(1,0,0,52); header.BackgroundColor3=Theme.Panel2; corner(header,12); header.Parent=main
+  local icon = Instance.new("ImageLabel"); icon.BackgroundTransparency=1; icon.Position=UDim2.fromOffset(12,10); icon.Size=UDim2.fromOffset(28,28)
+  icon.Image = opts.Icon and (type(opts.Icon)=="string" and opts.Icon or ("rbxassetid://"..tostring(opts.Icon))) or ""; icon.ImageTransparency = opts.Icon and 0 or 1; icon.ImageColor3=Theme.Accent; icon.Parent=header
+  local title = Instance.new("TextLabel"); title.BackgroundTransparency=1; title.Position=UDim2.fromOffset(48,8); title.Size=UDim2.fromOffset(520,18)
+  title.Font=Enum.Font.GothamMedium; title.TextSize=14; title.TextXAlignment=Enum.TextXAlignment.Left; title.TextColor3=Theme.Text; title.Text=tostring(opts.Name or "TongkolUI"); title.Parent=header
+  local sub = Instance.new("TextLabel"); sub.BackgroundTransparency=1; sub.Position=UDim2.fromOffset(48,28); sub.Size=UDim2.fromOffset(520,16)
+  sub.Font=Enum.Font.Gotham; sub.TextSize=12; sub.TextXAlignment=Enum.TextXAlignment.Left; sub.TextColor3=Theme.TextDim; sub.Text=tostring(opts.IntroText or ""); sub.Parent=header
+
+  -- buttons (minimize/close)
+  local btnMini = Instance.new("ImageButton"); btnMini.BackgroundTransparency=1; btnMini.Size=UDim2.fromOffset(20,20); btnMini.AnchorPoint=Vector2.new(1,0)
+  btnMini.Position=UDim2.new(1,-44,0,16); btnMini.Image="rbxassetid://6035067836"; btnMini.Parent=header
+  local btnClose = Instance.new("ImageButton"); btnClose.BackgroundTransparency=1; btnClose.Size=UDim2.fromOffset(20,20); btnClose.AnchorPoint=Vector2.new(1,0)
+  btnClose.Position=UDim2.new(1,-20,0,16); btnClose.Image="rbxassetid://3926305904"; btnClose.ImageRectOffset=Vector2.new(284,4); btnClose.ImageRectSize=Vector2.new(24,24); btnClose.Parent=header
+
+  -- drag
+  do
+    local dragging, dragStart, startPos
+    header.InputBegan:Connect(function(input)
+      if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        dragging=true; dragStart=input.Position; startPos=main.Position
+        input.Changed:Connect(function() if input.UserInputState==Enum.UserInputState.End then dragging=false end end)
+      end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+      if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset+delta.X, startPos.Y.Scale, startPos.Y.Offset+delta.Y)
+      end
+    end)
+  end
+
+  -- nav & content
+  local nav = Instance.new("Frame"); nav.Position=UDim2.fromOffset(0,52); nav.Size=UDim2.new(0,180,1,-52); nav.BackgroundColor3=Theme.Panel2; stroke(nav,0.5); pad(nav,10); nav.Parent=main
+  local navList = Instance.new("UIListLayout"); navList.Padding=UDim.new(0,6); navList.Parent=nav
+  local content = Instance.new("Frame"); content.Position=UDim2.fromOffset(180,52); content.Size=UDim2.new(1,-180,1,-52); content.BackgroundTransparency=1; content.Parent=main
+
+  -- resize handle
+  local rh = Instance.new("Frame"); rh.AnchorPoint=Vector2.new(1,1); rh.Position=UDim2.new(1,-6,1,-6); rh.Size=UDim2.fromOffset(14,14)
+  rh.BackgroundColor3=Theme.Panel2; corner(rh,3); stroke(rh,0.5); rh.Parent=main
+  local resizing=false
+  rh.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then resizing=true end end)
+  rh.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then resizing=false end end)
+  UserInputService.InputChanged:Connect(function(i)
+    if resizing and i.UserInputType==Enum.UserInputType.MouseMovement then
+      local m=UserInputService:GetMouseLocation()
+      local x=math.clamp(m.X-main.AbsolutePosition.X, 520, 1200)
+      local y=math.clamp(m.Y-main.AbsolutePosition.Y, 320, 800)
+      main.Size = UDim2.fromOffset(x,y)
+    end
+  end)
+
+  -- minimize / close
+  local collapsed=false; local fullSize=main.Size
+  local function setCollapsed(state)
+    collapsed = state and true or false
+    if collapsed then
+      fullSize = main.Size
+      nav.Visible=false; content.Visible=false
+      TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size=UDim2.new(fullSize.X.Scale, fullSize.X.Offset, 0, 52)}):Play()
+    else
+      nav.Visible=true; content.Visible=true
+      TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size=fullSize}):Play()
+    end
+  end
+  btnMini.MouseButton1Click:Connect(function() setCollapsed(not collapsed) end)
+  btnClose.MouseButton1Click:Connect(function() (gui.Parent or gui):Destroy() end)
+
+  -- hotkey hide/show
+  local hidden=false
+  local toggleKey = opts.ToggleKey or Enum.KeyCode.RightShift
+  local function hideUI()
+    hidden=true
+    TweenService:Create(main, TweenInfo.new(0.2), {BackgroundTransparency=1, Position=UDim2.new(0.5,-main.Size.X.Offset/2, 1, 12)}):Play()
+    task.delay(0.22, function() main.Visible=false end)
+  end
+  local function showUI()
+    main.Visible=true; hidden=false
+    main.Position = UDim2.new(0.5,-main.Size.X.Offset/2, 1, 12)
+    TweenService:Create(main, TweenInfo.new(0.22), {BackgroundTransparency=0, Position=UDim2.new(0.5,-main.Size.X.Offset/2,0.5,-main.Size.Y.Offset/2)}):Play()
+  end
+  UserInputService.InputBegan:Connect(function(input, gp)
+    if not gp and input.KeyCode==toggleKey then if hidden then showUI() else hideUI() end end
+  end)
+
+  local self = setmetatable({
+    _Gui = gui, _PopupRoot = popupRoot, _Main = main, _Nav = nav, _Content = content,
+    _Tabs = {}, _CurrentTab=nil,
+    _SaveConfig = (opts.SaveConfig ~= false), _ConfigFolder = opts.ConfigFolder or "TongkolUI",
+  }, Window)
+
+  Tongkol._LastWindow = self
+  return self
+end
+
+--= helpers for tabs/controls ===================================================
+local function makeNavButton(parent, name)
+  local b = Instance.new("TextButton")
+  b.Size=UDim2.new(1,-4,0,32); b.BackgroundColor3=Theme.Panel; b.Text=name
+  b.TextColor3=Theme.Text; b.TextSize=12; b.Font=Enum.Font.Gotham; b.AutoButtonColor=false
+  corner(b,8); stroke(b,0.5); b.Parent=parent; return b
+end
+local function makeScroll(parent)
+  local sc = Instance.new("ScrollingFrame")
+  sc.Active=true; sc.CanvasSize=UDim2.new(0,0,0,0); sc.AutomaticCanvasSize=Enum.AutomaticSize.Y
+  sc.ScrollBarThickness=5; sc.BorderSizePixel=0; sc.BackgroundTransparency=1
+  sc.Size=UDim2.new(1,-24,1,-24); sc.Position=UDim2.fromOffset(12,12)
+  local list=Instance.new("UIListLayout"); list.Padding=UDim.new(0,8); list.SortOrder=Enum.SortOrder.LayoutOrder; list.Parent=sc
+  return sc
+end
+
 --= TAB API =====================================================================
 function Window:CreateTab(t)
   -- boleh string atau table
@@ -347,3 +634,7 @@ function Window:CreateTab(t)
 
   return api
 end
+
+--= EXPORT ======================================================================
+local M = setmetatable({ Flags = Tongkol.Flags }, Tongkol)
+return M
