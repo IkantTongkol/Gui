@@ -430,6 +430,7 @@ function Window:CreateTab(t)
     local f=Instance.new("Frame"); f.BackgroundColor3=Theme.Panel2; f.BackgroundTransparency=0.1
     f.Size=UDim2.new(1,0,0,height or 56); corner(f,10); stroke(f,0.5); pad(f,8); f.Parent=container; return f
   end
+
   local function header(parent, title, subtitle)
   local lbl = Instance.new("TextLabel")
   lbl.BackgroundTransparency = 1
@@ -563,67 +564,146 @@ end
   end
 
  function api:AddDropdown(a,b,c,d,e,f)
-  local x=asDropdown(a,b,c,d,e,f)
-  local items={}
-  for _,v in ipairs(x.Options or {"A","B"}) do table.insert(items,v) end
+  local x = asDropdown(a,b,c,d,e,f)
+  local items = {}
+  for _,v in ipairs(x.Options or {"A","B"}) do table.insert(items, v) end
   local multi = x.Multiple or x.MultipleOptions or (typeof(x.Default)=="table")
-  local sel = multi and (x.Default or {}) or (x.Default or items[1])
+  local sel   = multi and (x.Default or {}) or (x.Default or items[1])
 
-  local cfr=card(56); header(cfr, x.Name or "Dropdown")
-  local btn=Instance.new("TextButton"); btn.AnchorPoint=Vector2.new(1,0.5); btn.Position=UDim2.new(1,-12,0.5,0); btn.Size=UDim2.fromOffset(220,28)
+  local cfr = card(56)
+  cfr.ZIndex = 1                        -- kartu di bawah tombol
+  header(cfr, x.Name or "Dropdown")
+
+  -- tombol utama di kanan
+  local btn = Instance.new("TextButton")
+  btn.AnchorPoint = Vector2.new(1,0.5)
+  btn.Position = UDim2.new(1,-12,0.5,0)
+  btn.Size = UDim2.fromOffset(220,28)
   btn.Text = (multi and (#sel==0 and "None" or (#sel==1 and sel[1] or "Various"))) or (sel or "")
-  btn.Font=Enum.Font.Gotham; btn.TextSize=12; btn.TextColor3=Theme.Text
-  btn.BackgroundColor3=Theme.Panel; btn.BackgroundTransparency=0.1; btn.AutoButtonColor=false
-  btn.ZIndex = 2  -- <— penting: di atas header label
-  corner(btn,8); stroke(btn,0.5); btn.Parent=cfr
+  btn.Font = Enum.Font.Gotham
+  btn.TextSize = 12
+  btn.TextColor3 = Theme.Text
+  btn.BackgroundColor3 = Theme.Panel
+  btn.BackgroundTransparency = 0.1
+  btn.AutoButtonColor = false
+  btn.ZIndex = 2                        -- pastikan di atas label
+  corner(btn,8); stroke(btn,0.5)
+  btn.Parent = cfr
 
-  local popupRoot=self._PopupRoot
+  -- area klik lebar (tak terlihat) di sisi kiri kartu
+  local hit = Instance.new("TextButton")
+  hit.BackgroundTransparency = 1
+  hit.Text = ""
+  hit.AutoButtonColor = false
+  hit.Size = UDim2.new(1, -240, 1, 0)  -- selaras dengan header() yang sisakan 240px kanan
+  hit.ZIndex = 1
+  hit.Parent = cfr
+
+  local popupRoot = self._PopupRoot
   local currentPopup
-  local function closePopup() if currentPopup then currentPopup:Destroy(); currentPopup=nil end end
 
-  local function clampMenuPos(xp,yp,w,h)
-    local vs=Camera and Camera.ViewportSize or Vector2.new(1920,1080)
-    local nx=math.clamp(xp,8,vs.X-w-8); local ny=math.clamp(yp,8,vs.Y-h-8); return nx,ny
+  local function closePopup()
+    if currentPopup then currentPopup:Destroy(); currentPopup = nil end
+  end
+
+  local function clampMenuPos(xp, yp, w, h)
+    local vs = (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize) or Vector2.new(1920,1080)
+    local nx = math.clamp(xp, 8, vs.X - w - 8)
+    local ny = math.clamp(yp, 8, vs.Y - h - 8)
+    return nx, ny
   end
 
   local function setLabelFromSel()
     if multi then
-      if #sel==0 then btn.Text="None"
-      elseif #sel==1 then btn.Text=sel[1]
-      else btn.Text="Various" end
-    else btn.Text = sel or "" end
+      if #sel == 0 then
+        btn.Text = "None"
+      elseif #sel == 1 then
+        btn.Text = sel[1]
+      else
+        btn.Text = "Various"
+      end
+    else
+      btn.Text = sel or ""
+    end
   end
 
   local function openPopup()
     closePopup()
-    local holder=Instance.new("Frame"); holder.BackgroundTransparency=1; holder.Size=UDim2.fromScale(1,1); holder.ZIndex=5000; holder.Parent=popupRoot
-    local blocker=Instance.new("TextButton"); blocker.BackgroundTransparency=1; blocker.Text=""; blocker.Size=UDim2.fromScale(1,1); blocker.ZIndex=5000; blocker.Parent=holder
-    local menu=Instance.new("Frame"); menu.BackgroundColor3=Theme.Panel; menu.BackgroundTransparency=0.05; menu.ZIndex=5001; corner(menu,8); stroke(menu,0.5); pad(menu,6); menu.Parent=holder
-    local l=Instance.new("UIListLayout"); l.Padding=UDim.new(0,6); l.SortOrder=Enum.SortOrder.LayoutOrder; l.Parent=menu
 
-    local height = math.clamp(math.max(#items,1),1,8)*24 + 8
-    menu.Size=UDim2.fromOffset(220,height)
-    local pos=btn.AbsolutePosition; local size=btn.AbsoluteSize
-    local mx=pos.X + size.X - 220
-    local my=pos.Y + size.Y + 6
-    mx,my=clampMenuPos(mx,my,220,height)
-    menu.Position=UDim2.fromOffset(mx,my)
+    -- holder di ScreenGui (paling atas)
+    local holder = Instance.new("Frame")
+    holder.BackgroundTransparency = 1
+    holder.Size = UDim2.fromScale(1,1)
+    holder.ZIndex = 5000
+    holder.Parent = popupRoot
 
-    if #items==0 then
-      local i=Instance.new("TextLabel"); i.Size=UDim2.new(1,0,0,22); i.Text="(no options)"; i.TextColor3=Theme.TextDim; i.Font=Enum.Font.Gotham; i.TextSize=12; i.BackgroundTransparency=1; i.ZIndex=5001; i.Parent=menu
+    -- klik di luar untuk menutup
+    local blocker = Instance.new("TextButton")
+    blocker.BackgroundTransparency = 1
+    blocker.Text = ""
+    blocker.Size = UDim2.fromScale(1,1)
+    blocker.ZIndex = 5000
+    blocker.Parent = holder
+
+    local menu = Instance.new("Frame")
+    menu.BackgroundColor3 = Theme.Panel
+    menu.BackgroundTransparency = 0.05
+    menu.ZIndex = 5001
+    corner(menu,8); stroke(menu,0.5); pad(menu,6)
+    menu.Parent = holder
+    menu.ClipsDescendants = true
+
+    local l = Instance.new("UIListLayout")
+    l.Padding = UDim.new(0,6)
+    l.SortOrder = Enum.SortOrder.LayoutOrder
+    l.Parent = menu
+
+    local height = math.clamp(math.max(#items,1), 1, 8) * 24 + 8
+    menu.Size = UDim2.fromOffset(220, height)
+
+    local pos = btn.AbsolutePosition
+    local size = btn.AbsoluteSize
+    local mx = pos.X + size.X - 220
+    local my = pos.Y + size.Y + 6
+    mx, my = clampMenuPos(mx, my, 220, height)
+    menu.Position = UDim2.fromOffset(mx, my)
+
+    if #items == 0 then
+      local i = Instance.new("TextLabel")
+      i.Size = UDim2.new(1,0,0,22)
+      i.Text = "(no options)"
+      i.TextColor3 = Theme.TextDim
+      i.Font = Enum.Font.Gotham
+      i.TextSize = 12
+      i.BackgroundTransparency = 1
+      i.ZIndex = 5001
+      i.Parent = menu
     else
       for _,it in ipairs(items) do
-        local i=Instance.new("TextButton"); i.Size=UDim2.new(1,0,0,22); i.Text=it; i.TextColor3=Theme.Text; i.Font=Enum.Font.Gotham; i.TextSize=12; i.BackgroundTransparency=1; i.ZIndex=5001; i.Parent=menu
+        local i = Instance.new("TextButton")
+        i.Size = UDim2.new(1,0,0,22)
+        i.Text = tostring(it)
+        i.TextColor3 = Theme.Text
+        i.Font = Enum.Font.Gotham
+        i.TextSize = 12
+        i.BackgroundTransparency = 1
+        i.AutoButtonColor = false
+        i.ZIndex = 5001
+        i.Parent = menu
         i.MouseButton1Click:Connect(function()
           if multi then
-            local idx=table.find(sel, it)
+            local idx = table.find(sel, it)
             if idx then table.remove(sel, idx) else table.insert(sel, it) end
           else
             sel = it
           end
           setLabelFromSel()
-          if x.Flag then local flags=makeFlagTable(Tongkol); flags[x.Flag]=flags[x.Flag] or {}; flags[x.Flag].Value = multi and sel or sel end
-          if x.Callback then if multi then pcall(x.Callback, sel) else pcall(x.Callback, sel) end end
+          if x.Flag then
+            local flags = makeFlagTable(Tongkol)
+            flags[x.Flag] = flags[x.Flag] or {}
+            flags[x.Flag].Value = multi and sel or sel
+          end
+          if x.Callback then pcall(x.Callback, sel) end
           if not multi then closePopup() end
         end)
       end
@@ -633,16 +713,23 @@ end
     currentPopup = holder
   end
 
-  btn.MouseButton1Click:Connect(function() if currentPopup then closePopup() else openPopup() end end)
+  local function togglePopup()
+    if currentPopup then closePopup() else openPopup() end
+  end
+
+  -- klik tombol kanan ATAU klik area kiri sama-sama buka popup
+  btn.MouseButton1Click:Connect(togglePopup)
+  hit.MouseButton1Click:Connect(togglePopup)
+
   setLabelFromSel()
-  attachFlag(Tongkol, x.Flag, function(v) sel=v; setLabelFromSel() end, function() return sel end, sel)
+  attachFlag(Tongkol, x.Flag, function(v) sel = v; setLabelFromSel() end, function() return sel end, sel)
 
   return {
-    Set = function(v) sel=v; setLabelFromSel() end,
+    Set = function(v) sel = v; setLabelFromSel() end,
     Add = function(v) table.insert(items, v) end,
     Remove = function(v)
       for k,xv in ipairs(items) do if xv==v then table.remove(items,k) break end end
-      if not multi and sel==v then sel=items[1]; setLabelFromSel() end
+      if not multi and sel==v then sel = items[1]; setLabelFromSel() end
     end
   }
 end
