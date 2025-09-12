@@ -432,20 +432,40 @@ function Window:CreateTab(t)
   end
 
   local function header(parent, title, subtitle)
-  local lbl = Instance.new("TextLabel")
-  lbl.BackgroundTransparency = 1
-  lbl.TextXAlignment = Enum.TextXAlignment.Left
-  lbl.TextYAlignment = Enum.TextYAlignment.Top
-  lbl.RichText = true
-  lbl.Font = Enum.Font.Gotham
-  lbl.TextSize = 12
-  lbl.TextColor3 = Theme.Text
-  lbl.Text = subtitle and (title.."\n<font color='#9aa3b2'>"..subtitle.."</font>") or (title or "")
-  lbl.Size = UDim2.new(1, -240, 1, 0)  
-  lbl.ZIndex = 0                       
-  lbl.Parent = parent
-  return lbl
+  -- container header setinggi 34px kalau ada subtitle, 18px kalau tidak
+  local H = subtitle and 34 or 18
+  local cont = Instance.new("Frame")
+  cont.BackgroundTransparency = 1
+  cont.Size = UDim2.new(1, -240, 0, H) -- sisakan 240px kanan untuk tombol
+  cont.ZIndex = 1
+  cont.Parent = parent
+
+  local tl = Instance.new("TextLabel")
+  tl.BackgroundTransparency = 1
+  tl.TextXAlignment = Enum.TextXAlignment.Left
+  tl.Font = Enum.Font.GothamMedium
+  tl.TextSize = 12
+  tl.TextColor3 = Theme.Text
+  tl.Text = tostring(title or "")
+  tl.Size = UDim2.new(1, 0, 0, 18)
+  tl.Parent = cont
+
+  if subtitle and subtitle ~= "" then
+    local sub = Instance.new("TextLabel")
+    sub.BackgroundTransparency = 1
+    sub.TextXAlignment = Enum.TextXAlignment.Left
+    sub.Font = Enum.Font.Gotham
+    sub.TextSize = 12
+    sub.TextColor3 = Theme.TextDim
+    sub.Text = tostring(subtitle)
+    sub.Position = UDim2.fromOffset(0, 18)
+    sub.Size = UDim2.new(1, 0, 0, 14)
+    sub.Parent = cont
+  end
+
+  return cont
 end
+
 
 
   -- ===== helpers: coerce positional -> table
@@ -567,169 +587,186 @@ end
   local x = asDropdown(a,b,c,d,e,f)
   local items = {}
   for _,v in ipairs(x.Options or {"A","B"}) do table.insert(items, v) end
+
   local multi = x.Multiple or x.MultipleOptions or (typeof(x.Default)=="table")
   local sel   = multi and (x.Default or {}) or (x.Default or items[1])
 
   local cfr = card(56)
-  cfr.ZIndex = 1                        -- kartu di bawah tombol
+  cfr.AutomaticSize = Enum.AutomaticSize.Y   -- boleh melar ke bawah saat menu dibuka
   header(cfr, x.Name or "Dropdown")
 
-  -- tombol utama di kanan
+  -- tombol kanan
   local btn = Instance.new("TextButton")
-  btn.AnchorPoint = Vector2.new(1,0.5)
-  btn.Position = UDim2.new(1,-12,0.5,0)
+  btn.AnchorPoint = Vector2.new(1,0)
+  btn.Position = UDim2.new(1,-12,0, (34-28)/2) -- center di tinggi header (18/34)
   btn.Size = UDim2.fromOffset(220,28)
-  btn.Text = (multi and (#sel==0 and "None" or (#sel==1 and sel[1] or "Various"))) or (sel or "")
+  btn.Text = ""
   btn.Font = Enum.Font.Gotham
   btn.TextSize = 12
   btn.TextColor3 = Theme.Text
   btn.BackgroundColor3 = Theme.Panel
   btn.BackgroundTransparency = 0.1
   btn.AutoButtonColor = false
-  btn.ZIndex = 2                        -- pastikan di atas label
+  btn.ZIndex = 2
   corner(btn,8); stroke(btn,0.5)
   btn.Parent = cfr
 
-  -- area klik lebar (tak terlihat) di sisi kiri kartu
+  -- label di dalam tombol (biar gampang update)
+  local btnText = Instance.new("TextLabel")
+  btnText.BackgroundTransparency = 1
+  btnText.Size = UDim2.new(1,-24,1,0)
+  btnText.Position = UDim2.fromOffset(8,0)
+  btnText.Font = Enum.Font.Gotham
+  btnText.TextSize = 12
+  btnText.TextXAlignment = Enum.TextXAlignment.Left
+  btnText.TextColor3 = Theme.Text
+  btnText.Parent = btn
+
+  -- ikon chevron kanan
+  local chev = Instance.new("ImageLabel")
+  chev.BackgroundTransparency = 1
+  chev.AnchorPoint = Vector2.new(1,0.5)
+  chev.Position = UDim2.new(1,-6,0.5,0)
+  chev.Size = UDim2.fromOffset(16,16)
+  chev.Image = "rbxassetid://7072718684" -- chevron-down
+  chev.ImageColor3 = Theme.TextDim
+  chev.Parent = btn
+
+  -- area klik kiri (judul/label)
   local hit = Instance.new("TextButton")
   hit.BackgroundTransparency = 1
   hit.Text = ""
   hit.AutoButtonColor = false
-  hit.Size = UDim2.new(1, -240, 1, 0)  -- selaras dengan header() yang sisakan 240px kanan
+  hit.Size = UDim2.new(1, -240, 0, 34)
+  hit.Position = UDim2.fromOffset(0,0)
   hit.ZIndex = 1
   hit.Parent = cfr
 
-  local popupRoot = self._PopupRoot
-  local currentPopup
+  -- kontainer menu di dalam card (muncul ke bawah)
+  local menu = Instance.new("Frame")
+  menu.Name = "Menu"
+  menu.BackgroundColor3 = Theme.Panel
+  menu.BackgroundTransparency = 0.05
+  menu.Visible = false
+  menu.Position = UDim2.fromOffset(0, 34 + 6) -- di bawah header + sedikit jarak
+  menu.Size = UDim2.new(1, 0, 0, 0)
+  menu.AutomaticSize = Enum.AutomaticSize.Y
+  menu.ZIndex = 2
+  corner(menu,8); stroke(menu,0.5); pad(menu,6)
+  menu.Parent = cfr
 
-  local function closePopup()
-    if currentPopup then currentPopup:Destroy(); currentPopup = nil end
-  end
+  local list = Instance.new("UIListLayout")
+  list.Padding = UDim.new(0,6)
+  list.SortOrder = Enum.SortOrder.LayoutOrder
+  list.Parent = menu
 
-  local function clampMenuPos(xp, yp, w, h)
-    local vs = (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize) or Vector2.new(1920,1080)
-    local nx = math.clamp(xp, 8, vs.X - w - 8)
-    local ny = math.clamp(yp, 8, vs.Y - h - 8)
-    return nx, ny
-  end
-
+  -- util: set text tombol dari selection
   local function setLabelFromSel()
     if multi then
       if #sel == 0 then
-        btn.Text = "None"
+        btnText.Text = "None"
       elseif #sel == 1 then
-        btn.Text = sel[1]
+        btnText.Text = tostring(sel[1])
       else
-        btn.Text = "Various"
+        btnText.Text = "Various"
       end
     else
-      btn.Text = sel or ""
+      btnText.Text = sel and tostring(sel) or ""
     end
   end
 
-  local function openPopup()
-    closePopup()
-
-    -- holder di ScreenGui (paling atas)
-    local holder = Instance.new("Frame")
-    holder.BackgroundTransparency = 1
-    holder.Size = UDim2.fromScale(1,1)
-    holder.ZIndex = 5000
-    holder.Parent = popupRoot
-
-    -- klik di luar untuk menutup
-    local blocker = Instance.new("TextButton")
-    blocker.BackgroundTransparency = 1
-    blocker.Text = ""
-    blocker.Size = UDim2.fromScale(1,1)
-    blocker.ZIndex = 5000
-    blocker.Parent = holder
-
-    local menu = Instance.new("Frame")
-    menu.BackgroundColor3 = Theme.Panel
-    menu.BackgroundTransparency = 0.05
-    menu.ZIndex = 5001
-    corner(menu,8); stroke(menu,0.5); pad(menu,6)
-    menu.Parent = holder
-    menu.ClipsDescendants = true
-
-    local l = Instance.new("UIListLayout")
-    l.Padding = UDim.new(0,6)
-    l.SortOrder = Enum.SortOrder.LayoutOrder
-    l.Parent = menu
-
-    local height = math.clamp(math.max(#items,1), 1, 8) * 24 + 8
-    menu.Size = UDim2.fromOffset(220, height)
-
-    local pos = btn.AbsolutePosition
-    local size = btn.AbsoluteSize
-    local mx = pos.X + size.X - 220
-    local my = pos.Y + size.Y + 6
-    mx, my = clampMenuPos(mx, my, 220, height)
-    menu.Position = UDim2.fromOffset(mx, my)
-
-    if #items == 0 then
-      local i = Instance.new("TextLabel")
-      i.Size = UDim2.new(1,0,0,22)
-      i.Text = "(no options)"
-      i.TextColor3 = Theme.TextDim
-      i.Font = Enum.Font.Gotham
-      i.TextSize = 12
-      i.BackgroundTransparency = 1
-      i.ZIndex = 5001
-      i.Parent = menu
-    else
-      for _,it in ipairs(items) do
-        local i = Instance.new("TextButton")
-        i.Size = UDim2.new(1,0,0,22)
-        i.Text = tostring(it)
-        i.TextColor3 = Theme.Text
-        i.Font = Enum.Font.Gotham
-        i.TextSize = 12
-        i.BackgroundTransparency = 1
-        i.AutoButtonColor = false
-        i.ZIndex = 5001
-        i.Parent = menu
-        i.MouseButton1Click:Connect(function()
-          if multi then
-            local idx = table.find(sel, it)
-            if idx then table.remove(sel, idx) else table.insert(sel, it) end
-          else
-            sel = it
-          end
-          setLabelFromSel()
-          if x.Flag then
-            local flags = makeFlagTable(Tongkol)
-            flags[x.Flag] = flags[x.Flag] or {}
-            flags[x.Flag].Value = multi and sel or sel
-          end
-          if x.Callback then pcall(x.Callback, sel) end
-          if not multi then closePopup() end
-        end)
+  -- render opsi
+  local optionButtons = {}
+  local function refreshVisuals()
+    for _,b in ipairs(optionButtons) do
+      local isChosen = false
+      if multi then
+        isChosen = table.find(sel, b._value) ~= nil
+      else
+        isChosen = (sel == b._value)
       end
+      -- simple indicator: warnai teks/garis kiri saat terpilih
+      b.TextColor3 = isChosen and Theme.Accent or Theme.Text
+      b._mark.BackgroundTransparency = isChosen and 0 or 0.8
     end
-
-    blocker.MouseButton1Click:Connect(closePopup)
-    currentPopup = holder
   end
 
-  local function togglePopup()
-    if currentPopup then closePopup() else openPopup() end
+  local function onPick(it)
+    if multi then
+      local idx = table.find(sel, it)
+      if idx then table.remove(sel, idx) else table.insert(sel, it) end
+    else
+      sel = it
+    end
+    setLabelFromSel()
+    refreshVisuals()
+    if x.Flag then
+      local flags = makeFlagTable(Tongkol)
+      flags[x.Flag] = flags[x.Flag] or {}
+      flags[x.Flag].Value = multi and sel or sel
+    end
+    if x.Callback then pcall(x.Callback, sel) end
+    if not multi then
+      menu.Visible = false
+      chev.Image = "rbxassetid://7072718684" -- tutup (chevron-down)
+    end
   end
 
-  -- klik tombol kanan ATAU klik area kiri sama-sama buka popup
-  btn.MouseButton1Click:Connect(togglePopup)
-  hit.MouseButton1Click:Connect(togglePopup)
+  -- buat item
+  for _,it in ipairs(items) do
+    local row = Instance.new("TextButton")
+    row.Name = "Option_"..tostring(it)
+    row.Size = UDim2.new(1,0,0,22)
+    row.Text = tostring(it)
+    row.Font = Enum.Font.Gotham
+    row.TextSize = 12
+    row.TextXAlignment = Enum.TextXAlignment.Left
+    row.BackgroundTransparency = 1
+    row.AutoButtonColor = false
+    row.ZIndex = 2
+    row.Parent = menu
+    row._value = it
+
+    local mark = Instance.new("Frame")
+    mark.Size = UDim2.fromOffset(3,18)
+    mark.Position = UDim2.fromOffset(0,2)
+    mark.BackgroundColor3 = Theme.Accent
+    mark.BackgroundTransparency = 0.8
+    mark.ZIndex = 2
+    mark.Parent = row
+    row._mark = mark
+
+    row.MouseButton1Click:Connect(function() onPick(it) end)
+    table.insert(optionButtons, row)
+  end
+
+  local function toggleMenu()
+    local v = not menu.Visible
+    menu.Visible = v
+    chev.Image = v and "rbxassetid://7072718263" or "rbxassetid://7072718684" -- up / down
+  end
+
+  btn.MouseButton1Click:Connect(toggleMenu)
+  hit.MouseButton1Click:Connect(toggleMenu)
 
   setLabelFromSel()
-  attachFlag(Tongkol, x.Flag, function(v) sel = v; setLabelFromSel() end, function() return sel end, sel)
+  refreshVisuals()
+
+  attachFlag(Tongkol, x.Flag,
+    function(v) sel = v; setLabelFromSel(); refreshVisuals() end,
+    function() return sel end,
+    sel
+  )
 
   return {
-    Set = function(v) sel = v; setLabelFromSel() end,
-    Add = function(v) table.insert(items, v) end,
+    Set = function(v) sel = v; setLabelFromSel(); refreshVisuals() end,
+    Add = function(v)
+      table.insert(items, v)
+      -- (opsional) kamu bisa re-render ulang list kalau mau
+    end,
     Remove = function(v)
       for k,xv in ipairs(items) do if xv==v then table.remove(items,k) break end end
-      if not multi and sel==v then sel = items[1]; setLabelFromSel() end
+      if not multi and sel==v then sel = items[1]; setLabelFromSel(); refreshVisuals() end
     end
   }
 end
