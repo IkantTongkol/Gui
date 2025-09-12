@@ -1,34 +1,23 @@
 --[[
-Orionlike Roblox UI — ModuleScript (API Orion 1:1)
+Orionlike Roblox UI — ModuleScript (API Orion 1:1, versi "all-in-one")
 
-Tujuan: Menyediakan API & nama fungsi yang *sepadan* (1:1) dengan Orion Library yang umum dipakai,
-namun implementasi UI murni Roblox (bukan salinan kode Orion). API yang dicakup:
+Tujuan: Menyediakan API & nama fungsi yang *sepadan* (1:1) dengan Orion Library,
+namun implementasi UI murni Roblox (bukan salinan Orion). Versi ini sudah **gabungan**:
+- Persisten config (SetConfigName, SaveConfig, LoadConfig, EnableAutoSave)
+- Close/Minimize/Drag + Resize handle
+- Search bar per-tab
+- API kontrol 1:1 gaya Orion
 
-OrionLib:MakeWindow(opts|name[, extraOpts])
-OrionLib:Init()
-OrionLib:Destroy()
-OrionLib:MakeNotification({Name, Content, Image, Time})
-OrionLib.Flags[flag] -> {Value, Set(v), Get()}
-
-Window:MakeTab({Name, Icon, PremiumOnly})
-Tab:AddSection({Name})
-Tab:AddParagraph(title, content) *atau* Tab:AddParagraph({Title, Content}) -> {Set({Title, Content})}
-Tab:AddLabel(text) *atau* Tab:AddLabel({Name=text}) -> {Set(text)}
-Tab:AddButton({Name, Callback})
-Tab:AddToggle({Name, Default, Color?, Flag?, Info?, Callback}) -> {Set(v)}
-Tab:AddSlider({Name, Min, Max, Default, Increment, Color?, Flag?, ValueName?, Callback}) -> {Set(v)}
-Tab:AddDropdown({Name, Default, Options, Flag?, Callback}) -> {Set(v), Add(opt), Remove(opt)}
-Tab:AddTextbox({Name, Default, TextDisappear, Callback}) -> {Set(text)}
-Tab:AddColorpicker({Name, Default, Flag?, Callback}) -> {Set(color3)}
-Tab:AddBind({Name, Default(KeyCode), Hold, Flag?, Callback}) -> {Set(keycode)}
-
-Catatan: Opsi SaveConfig/ConfigFolder diterima agar kompatibel, namun penyimpanan persisten
-lintas sesi belum diaktifkan (stub aman untuk Studio). Flags bekerja penuh di memori runtime.
---]]
+Catatan:
+- Persist: memakai `writefile/readfile` bila tersedia (executor). Di Studio fallback via Attribute pada ScreenGui.
+- Flags: Orion.Flags[flag] -> {Value, Set(v), Get()}
+]]
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 
 local Orion = {}
 Orion.__index = Orion
@@ -86,7 +75,15 @@ local function ensureGui()
 end
 
 -- =====================================================
--- FLAGS / CONFIG (in-memory)
+-- FILESYSTEM CHECK
+-- =====================================================
+local function hasFS()
+  return typeof(writefile)=="function" and typeof(readfile)=="function" and typeof(isfile)=="function"
+     and typeof(isfolder)=="function" and typeof(makefolder)=="function"
+end
+
+-- =====================================================
+-- FLAGS / CONFIG (persist + in-memory)
 -- =====================================================
 local function makeFlagTable(lib)
   lib.Flags = lib.Flags or {}
@@ -102,6 +99,90 @@ local function attachFlag(lib, flagName, setter, getter, initial)
       Get = function() return getter() end,
     }
   end
+end
+
+local function encodeFlags()
+  local data = {}
+  for k,entry in pairs(Orion.Flags or {}) do
+    local v = entry and (entry.Value ~= nil and entry.Value or entry)
+    if typeof(v)=="Color3" then
+      v = {__color3__=true, r=v.R, g=v.G, b=v.B}
+    elseif typeof(v)=="EnumItem" then
+      v = {__enum__=true, enum=v.EnumType.Name, name=v.Name}
+    end
+    data[k] = v
+  end
+  return HttpService:JSONEncode(data)
+end
+
+local function decodeAndApply(json)
+  if not json or json=="" then return false, "empty" end
+  local ok, data = pcall(HttpService.JSONDecode, HttpService, json)
+  if not ok or type(data)~="table" then return false, "decode" end
+  for k,v in pairs(data) do
+    if type(v)=="table" and v.__color3__ then v = Color3.new(v.r, v.g, v.b) end
+    if type(v)=="table" and v.__enum__ and Enum[v.enum] and Enum[v.enum][v.name] then v = Enum[v.enum][v.name] end
+    local entry = Orion.Flags and Orion.Flags[k]
+    if entry and entry.Set then entry.Set(v) else
+      Orion.Flags[k] = Orion.Flags[k] or {}
+      Orion.Flags[k].Value = v
+    end
+  end
+  return true
+end
+
+function Orion:SetConfigName(name)
+  self._ConfigName = tostring(name or "config")
+end
+
+function Orion:SaveConfig(window)
+  window = window or self._LastWindow
+  if not window then return false, "no-window" end
+  if not window._SaveConfig then return false, "disabled" end
+  local folder = tostring(window._ConfigFolder or "Orionlike")
+  local fname = tostring(self._ConfigName or "config") .. ".json"
+  local body = encodeFlags()
+  if hasFS() then
+    if not isfolder(folder) then makefolder(folder) end
+    writefile(folder.."/"..fname, body)
+    return true
+  else
+    local gui = window._Gui or ensureGui()
+    gui:SetAttribute("OrionlikeConfig", body)
+    return true, "attribute"
+  end
+end
+
+function Orion:LoadConfig(window)
+  window = window or self._LastWindow
+  if not window then return false, "no-window" end
+  local folder = tostring(window._ConfigFolder or "Orionlike")
+  local fname = tostring(self._ConfigName or "config") .. ".json"
+  local json
+  if hasFS() and isfile(folder.."/"..fname) then
+    json = readfile(folder.."/"..fname)
+  else
+    local gui = window._Gui or ensureGui()
+    json = gui:GetAttribute("OrionlikeConfig")
+  end
+  return decodeAndApply(json)
+end
+
+function Orion:EnableAutoSave(window, interval)
+  window = window or self._LastWindow
+  interval = tonumber(interval) or 2
+  if not window or window._AutoSaveConn then return end
+  local last = ""
+  window._AutoSaveConn = RunService.Heartbeat:Connect(function(dt)
+    window._acc = (window._acc or 0) + dt
+    if window._acc < interval then return end
+    window._acc = 0
+    local snap = encodeFlags()
+    if snap ~= last then
+      last = snap
+      Orion:SaveConfig(window)
+    end
+  end)
 end
 
 -- =====================================================
@@ -242,6 +323,61 @@ function Orion:MakeWindow(opts, extra)
   corner(header, 12)
   header.Parent = main
 
+  -- === Chrome: Drag + Minimize + Close ===
+  do
+    -- drag
+    local dragging, dragStart, startPos
+    header.InputBegan:Connect(function(input)
+      if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = main.Position
+        input.Changed:Connect(function()
+          if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+      end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+      if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+      end
+    end)
+
+    -- minimize & close buttons
+    local mini = Instance.new("ImageButton")
+    mini.Name = "Minimize"; mini.BackgroundTransparency = 1
+    mini.Size = UDim2.fromOffset(20,20)
+    mini.AnchorPoint = Vector2.new(1,0)
+    mini.Position = UDim2.new(1, -44, 0, 16)
+    mini.Image = "rbxassetid://6035067836"
+    mini.Parent = header
+
+    local close = Instance.new("ImageButton")
+    close.Name = "Close"; close.BackgroundTransparency = 1
+    close.Size = UDim2.fromOffset(20,20)
+    close.AnchorPoint = Vector2.new(1,0)
+    close.Position = UDim2.new(1, -20, 0, 16)
+    close.Image = "rbxassetid://3926305904"
+    close.ImageRectOffset = Vector2.new(284, 4)
+    close.ImageRectSize = Vector2.new(24, 24)
+    close.Parent = header
+
+    local collapsed = false
+    local fullSize = main.Size
+    local function setCollapsed(state)
+      collapsed = state and true or false
+      if collapsed then
+        fullSize = main.Size
+        TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(fullSize.X.Scale, fullSize.X.Offset, 0, 52)}):Play()
+      else
+        TweenService:Create(main, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = fullSize}):Play()
+      end
+    end
+    mini.MouseButton1Click:Connect(function() setCollapsed(not collapsed) end)
+    close.MouseButton1Click:Connect(function() gui:Destroy() end)
+  end
+
   local icon = Instance.new("ImageLabel")
   icon.BackgroundTransparency = 1
   icon.Position = UDim2.fromOffset(12, 10)
@@ -297,11 +433,11 @@ function Orion:MakeWindow(opts, extra)
   rh.Size = UDim2.fromOffset(14,14)
   rh.BackgroundColor3 = Theme.Panel2
   corner(rh, 3); stroke(rh, 0.5); rh.Parent = main
-  local dragging = False
-  rh.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end end)
-  rh.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
+  local resizing = false
+  rh.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then resizing = true end end)
+  rh.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then resizing = false end end)
   UserInputService.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+    if resizing and input.UserInputType == Enum.UserInputType.MouseMovement then
       local m = UserInputService:GetMouseLocation()
       local x = math.clamp(m.X - main.AbsolutePosition.X, 560, 1100)
       local y = math.clamp(m.Y - main.AbsolutePosition.Y, 360, 800)
@@ -321,11 +457,12 @@ function Orion:MakeWindow(opts, extra)
     _ConfigFolder = opts.ConfigFolder,
   }, Window)
 
+  Orion._LastWindow = self
   return self
 end
 
 -- =====================================================
--- TAB & CONTROLS
+-- TAB & KONTROL (termasuk search per-tab)
 -- =====================================================
 function Window:MakeTab(t)
   t = t or {}
@@ -339,14 +476,59 @@ function Window:MakeTab(t)
   page.Parent = self._Content
   local sc = makeScroll(page); sc.Parent = page
 
+  -- Search bar (per-tab)
+  local searchBar = Instance.new("Frame")
+  searchBar.Name = "SearchBar"
+  searchBar.BackgroundTransparency = 1
+  searchBar.Size = UDim2.new(1, -24, 0, 30)
+  searchBar.Position = UDim2.fromOffset(12, 8)
+  searchBar.LayoutOrder = 1
+  searchBar.Parent = sc
+  local box = Instance.new("TextBox")
+  box.PlaceholderText = "Search controls..."
+  box.Text = ""
+  box.Font = Enum.Font.Gotham
+  box.TextSize = 12
+  box.TextColor3 = Theme.Text
+  box.BackgroundColor3 = Theme.Panel
+  box.BackgroundTransparency = 0.1
+  box.Size = UDim2.new(1, 0, 1, 0)
+  box.ClearTextOnFocus = false
+  box.Parent = searchBar
+  corner(box, 8); stroke(box, 0.5)
+
   local container = Instance.new("Frame")
   container.BackgroundTransparency = 1
   container.Size = UDim2.new(1, 0, 0, 0)
   container.AutomaticSize = Enum.AutomaticSize.Y
   container.Parent = sc
+  container.LayoutOrder = 2
   local vlist = Instance.new("UIListLayout")
   vlist.Padding = UDim.new(0, 8)
   vlist.Parent = container
+
+  local function matches(frame, q)
+    q = string.lower(q)
+    local function findText(obj)
+      for _,d in ipairs(obj:GetDescendants()) do
+        if d:IsA("TextLabel") or d:IsA("TextButton") then
+          local t = string.lower(d.Text or "")
+          if string.find(t, q, 1, true) then return true end
+        end
+      end
+      return false
+    end
+    return findText(frame)
+  end
+  local function applyFilter()
+    local q = box.Text
+    for _,item in ipairs(container:GetChildren()) do
+      if item:IsA("Frame") then
+        item.Visible = (q == "" or matches(item, q))
+      end
+    end
+  end
+  box:GetPropertyChangedSignal("Text"):Connect(applyFilter)
 
   local tab = { Button = navBtn, Page = page, Container = container }
   self._Tabs[tabName] = tab
