@@ -1,28 +1,13 @@
 --[[
-Orionlike Roblox UI — ModuleScript (API Orion 1:1, versi "all-in-one" + PATCHES)
+Orionlike Roblox UI — ModuleScript (API Orion 1:1, patched)
 Patch list (2025-09-12):
-- Ukuran default lebih kecil + opsi Size di MakeWindow(opts.Size)
-- Minimize benar-benar menyembunyikan nav & content (bukan hanya mengecilkan tinggi)
-- Tab pertama auto-aktif (kontrol langsung tampil)
-- Search bar per-tab, Persisten config, Flags, Notifikasi, Resize handle
-
-API ringkas:
-  Orion:MakeWindow(opts | name, extra?) -> window
-  Orion:Init(), Orion:Destroy()
-  Orion:MakeNotification({Name, Content, Image, Time})
-  Orion:SetConfigName(name), Orion:SaveConfig(window), Orion:LoadConfig(window), Orion:EnableAutoSave(window, interval)
-  window:MakeTab({Name}) -> tab
-  tab:AddSection({Name})
-  tab:AddParagraph({Title, Content}) -> {Set({Title, Content})}
-  tab:AddLabel("text") -> {Set(text)}
-  tab:AddButton({Name, ButtonName, Callback})
-  tab:AddToggle({Name, Info, Default, Color, Flag, Callback}) -> {Set(bool)}
-  tab:AddSlider({Name, Min, Max, Increment, Default, ValueName, Color, Flag, Callback}) -> {Set(num)}
-  tab:AddDropdown({Name, Options, Default, Flag, Callback}) -> {Set(v), Add(opt), Remove(opt)}
-  tab:AddTextbox({Name, Default, Placeholder, TextDisappear, Flag, Callback}) -> {Set(text)}
-  tab:AddColorpicker({Name, Info, Default, Flag, Callback}) -> {Set(Color3)}
-  tab:AddBind({Name, Default (Enum.KeyCode), Hold, Flag, Callback}) -> {Set(KeyCode)}
-  Orion.Flags[flag] = { Value, Set(v), Get() }
+- Default window smaller + opts.Size
+- Minimize hides nav/content
+- First tab auto-active
+- Search bar per-tab (keeps on top)
+- Dropdown uses popup overlay (no clipping in ScrollingFrame)
+- Stable items copy (no table.clone)
+- UIListLayout.SortOrder fixed (prevents search bar jumping)
 ]]
 
 local Players = game:GetService("Players")
@@ -72,7 +57,17 @@ local function ensureGui()
     gui.IgnoreGuiInset = true
     gui.Parent = p
   end
-  return gui
+  -- popup root (overlay layer for dropdown/menus)
+  local pr = gui:FindFirstChild("OrionlikePopup")
+  if not pr then
+    pr = Instance.new("Frame")
+    pr.Name = "OrionlikePopup"
+    pr.BackgroundTransparency = 1
+    pr.Size = UDim2.fromScale(1,1)
+    pr.ZIndex = 200
+    pr.Parent = gui
+  end
+  return gui, pr
 end
 
 -- FS helpers
@@ -83,9 +78,7 @@ local function hasFS()
 end
 
 -- FLAGS / CONFIG
-local function makeFlagTable(lib)
-  lib.Flags = lib.Flags or {}; return lib.Flags
-end
+local function makeFlagTable(lib) lib.Flags = lib.Flags or {}; return lib.Flags end
 local function attachFlag(lib, flagName, setter, getter, initial)
   if not flagName then return end
   local flags = makeFlagTable(lib)
@@ -154,7 +147,6 @@ end
 
 function Orion:MakeNotification(d)
   d = d or {}; local gui = ensureGui()
-  -- root
   local root = gui:FindFirstChild("ToastRoot") or (function()
     local r = Instance.new("Frame"); r.Name="ToastRoot"; r.BackgroundTransparency=1
     r.AnchorPoint=Vector2.new(1,1); r.Position=UDim2.new(1,-12,1,-12); r.Size=UDim2.fromOffset(1,1); r.Parent=gui; return r
@@ -163,11 +155,9 @@ function Orion:MakeNotification(d)
   toast.AnchorPoint = Vector2.new(1,1); toast.Position = UDim2.new(1, 0, 1, 0)
   toast.Size = UDim2.fromOffset(300, 40); toast.BackgroundColor3 = Theme.Panel; toast.BackgroundTransparency = 0.05
   corner(toast, 8); stroke(toast, 0.5); pad(toast, 6); toast.Parent = root
-  local img = Instance.new("ImageLabel"); img.BackgroundTransparency=1; img.Position=UDim2.fromOffset(8,8); img.Size=UDim2.fromOffset(24,24)
-  img.Image = d.Image or ""; img.ImageColor3 = Theme.Accent; img.Parent = toast
-  local title = Instance.new("TextLabel"); title.BackgroundTransparency=1; title.Position=UDim2.fromOffset(40,6); title.Size=UDim2.fromOffset(240,14)
+  local title = Instance.new("TextLabel"); title.BackgroundTransparency=1; title.Position=UDim2.fromOffset(8,6); title.Size=UDim2.fromOffset(284,14)
   title.Font=Enum.Font.GothamMedium; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left; title.TextColor3=Theme.Text; title.Text=d.Name or "Info"; title.Parent=toast
-  local body = Instance.new("TextLabel"); body.BackgroundTransparency=1; body.Position=UDim2.fromOffset(40,20); body.Size=UDim2.fromOffset(240,16)
+  local body = Instance.new("TextLabel"); body.BackgroundTransparency=1; body.Position=UDim2.fromOffset(8,20); body.Size=UDim2.fromOffset(284,16)
   body.Font=Enum.Font.Gotham; body.TextSize=12; body.TextXAlignment=Enum.TextXAlignment.Left; body.TextColor3=Theme.TextDim; body.Text=d.Content or ""; body.Parent=toast
   TweenService:Create(toast, TweenInfo.new(0.18), {Position = UDim2.new(1, -12, 1, -12)}):Play()
   task.delay(d.Time or 2.0, function()
@@ -186,12 +176,11 @@ function Orion:MakeWindow(opts, extra)
   if typeof(opts) == "string" then local t = {Name = opts}; if typeof(extra)=="table" then for k,v in pairs(extra) do t[k]=v end end; opts = t
   elseif typeof(opts) ~= "table" then opts = {} end
 
-  -- forward declares for minimize patch
+  local gui, popupRoot = ensureGui()
   local nav, content
 
-  local gui = ensureGui()
   local main = Instance.new("Frame"); main.Name="Main"
-  main.Size = (opts and opts.Size) or UDim2.fromOffset(620, 400) -- PATCH A: default kecil + opsi Size
+  main.Size = (opts and opts.Size) or UDim2.fromOffset(620, 400)
   main.Position = UDim2.new(0.5, -main.Size.X.Offset/2, 0.5, -main.Size.Y.Offset/2)
   main.BackgroundColor3 = Theme.Panel; corner(main, 12); stroke(main, 0.55); main.Parent = gui
 
@@ -223,7 +212,7 @@ function Orion:MakeWindow(opts, extra)
 
     local collapsed = false
     local fullSize = main.Size
-    local function setCollapsed(state) -- PATCH B: sembunyi nav/content saat minimize
+    local function setCollapsed(state)
       collapsed = state and true or false
       if collapsed then
         fullSize = main.Size
@@ -279,8 +268,8 @@ function Orion:MakeWindow(opts, extra)
   end)
 
   local self = setmetatable({
-    _Gui = gui, _Main = main, _Nav = nav, _Content = content,
-    _Tabs = {}, _CurrentTab = nil, _Lib = self,
+    _Gui = gui, _PopupRoot = popupRoot, _Main = main, _Nav = nav, _Content = content,
+    _Tabs = {}, _CurrentTab = nil,
     _SaveConfig = opts.SaveConfig, _ConfigFolder = opts.ConfigFolder,
   }, Window)
 
@@ -300,7 +289,7 @@ local function makeScroll(parent)
   sc.Active=true; sc.CanvasSize=UDim2.new(0,0,0,0); sc.AutomaticCanvasSize=Enum.AutomaticSize.Y
   sc.ScrollBarThickness=5; sc.BorderSizePixel=0; sc.BackgroundTransparency=1
   sc.Size=UDim2.new(1, -24, 1, -24); sc.Position=UDim2.fromOffset(12, 12)
-  local list = Instance.new("UIListLayout"); list.Padding=UDim.new(0,8); list.Parent = sc
+  local list = Instance.new("UIListLayout"); list.Padding=UDim.new(0,8); list.SortOrder = Enum.SortOrder.LayoutOrder; list.Parent = sc
   return sc
 end
 
@@ -312,14 +301,14 @@ function Window:MakeTab(t)
   local page = Instance.new("Frame"); page.Visible=false; page.BackgroundTransparency=1; page.Size=UDim2.fromScale(1,1); page.Parent = self._Content
   local sc = makeScroll(page); sc.Parent = page
 
-  -- search per-tab
+  -- search per-tab (stays at top via LayoutOrder)
   local searchBar = Instance.new("Frame"); searchBar.Name="SearchBar"; searchBar.BackgroundTransparency=1; searchBar.Size=UDim2.new(1, -24, 0, 30); searchBar.Position=UDim2.fromOffset(12, 8); searchBar.LayoutOrder=1; searchBar.Parent=sc
   local box = Instance.new("TextBox"); box.PlaceholderText="Search controls..."; box.Text=""; box.Font=Enum.Font.Gotham; box.TextSize=12; box.TextColor3=Theme.Text
   box.BackgroundColor3=Theme.Panel; box.BackgroundTransparency=0.1; box.Size=UDim2.new(1,0,1,0); box.ClearTextOnFocus=false; box.Parent = searchBar
-  corner(box,8); stroke(box,0.5)
+  corner(box,8); stroke(box,0.5); box.ZIndex = 3; searchBar.ZIndex = 3
 
   local container = Instance.new("Frame"); container.BackgroundTransparency=1; container.Size=UDim2.new(1,0,0,0); container.AutomaticSize=Enum.AutomaticSize.Y; container.Parent=sc; container.LayoutOrder=2
-  local vlist = Instance.new("UIListLayout"); vlist.Padding=UDim.new(0,8); vlist.Parent=container
+  local vlist = Instance.new("UIListLayout"); vlist.Padding=UDim.new(0,8); vlist.SortOrder = Enum.SortOrder.LayoutOrder; vlist.Parent=container
 
   local function matches(frame, q)
     q = string.lower(q)
@@ -350,7 +339,6 @@ function Window:MakeTab(t)
     page.Visible = true; navBtn.BackgroundColor3 = Theme.Accent; self._CurrentTab = tab
   end)
 
-  -- PATCH C: auto-aktifkan tab pertama
   if not self._CurrentTab then
     self._CurrentTab = tab
     page.Visible = true
@@ -456,30 +444,67 @@ function Window:MakeTab(t)
 
   function api:AddDropdown(d)
     d = d or {}
-    local items = table.clone(d.Options or {"A","B"})
+    local items = {}
+    for _,v in ipairs(d.Options or {"A","B"}) do table.insert(items, v) end -- no table.clone dependency
     local sel = d.Default or items[1]
     local c = card(56); header(c, d.Name or "Dropdown")
+
     local btn = Instance.new("TextButton"); btn.AnchorPoint=Vector2.new(1,0.5); btn.Position=UDim2.new(1,-12,0.5,0); btn.Size=UDim2.fromOffset(220,28)
     btn.Text = sel or ""; btn.Font=Enum.Font.Gotham; btn.TextSize=12; btn.TextColor3=Theme.Text; btn.BackgroundColor3=Theme.Panel; btn.BackgroundTransparency=0.1; btn.AutoButtonColor=false; corner(btn,8); stroke(btn,0.5); btn.Parent=c
-    local menu = Instance.new("Frame"); menu.Visible=false; menu.Size=UDim2.new(0,220,0, math.clamp(#items,1,8)*24 + 8); menu.Position=UDim2.new(1,-12,1,6); menu.BackgroundColor3=Theme.Panel; menu.BackgroundTransparency=0.05; corner(menu,8); stroke(menu,0.5); menu.Parent=c
-    local l = Instance.new("UIListLayout"); l.Padding=UDim.new(0,6); pad(menu,6); l.Parent=menu
-    local function rebuild()
+
+    local popupRoot = self._PopupRoot
+    local currentPopup -- container for blocker + menu
+    local function closePopup() if currentPopup then currentPopup:Destroy(); currentPopup = nil end end
+
+    local function rebuild(menu)
       for _,ch in ipairs(menu:GetChildren()) do if ch:IsA("TextButton") then ch:Destroy() end end
       for _,it in ipairs(items) do
-        local i = Instance.new("TextButton"); i.Size=UDim2.new(1,0,0,20); i.Text=it; i.TextColor3=Theme.Text; i.Font=Enum.Font.Gotham; i.TextSize=12; i.BackgroundTransparency=1; i.Parent=menu
+        local i = Instance.new("TextButton"); i.Size=UDim2.new(1,0,0,22); i.Text=it; i.TextColor3=Theme.Text; i.Font=Enum.Font.Gotham; i.TextSize=12; i.BackgroundTransparency=1; i.ZIndex=201; i.Parent=menu
         i.MouseButton1Click:Connect(function()
           sel = it; btn.Text = sel
           if d.Flag then local flags=makeFlagTable(Orion); flags[d.Flag]=flags[d.Flag] or {}; flags[d.Flag].Value=sel end
           if d.Callback then pcall(d.Callback, sel) end
-          menu.Visible=false
+          closePopup()
         end)
       end
-      menu.Size=UDim2.new(0,220,0, math.clamp(#items,1,8)*24 + 8)
     end
-    btn.MouseButton1Click:Connect(function() menu.Visible = not menu.Visible end); rebuild()
+
+    local function openPopup()
+      closePopup()
+      local holder = Instance.new("Frame"); holder.Name="DropdownPopup"; holder.BackgroundTransparency=1; holder.Size=UDim2.fromScale(1,1); holder.ZIndex=199; holder.Parent=popupRoot
+      local blocker = Instance.new("TextButton"); blocker.BackgroundTransparency=1; blocker.Text=""; blocker.Size=UDim2.fromScale(1,1); blocker.ZIndex=199; blocker.Parent=holder
+      local menu = Instance.new("Frame"); menu.BackgroundColor3=Theme.Panel; menu.BackgroundTransparency=0.05; menu.ZIndex=200
+      corner(menu,8); stroke(menu,0.5); pad(menu,6); menu.Parent=holder
+
+      local l = Instance.new("UIListLayout"); l.Padding=UDim.new(0,6); l.SortOrder = Enum.SortOrder.LayoutOrder; l.Parent=menu
+
+      -- position under the button (screen space)
+      local pos = btn.AbsolutePosition; local size = btn.AbsoluteSize
+      local height = math.clamp(#items,1,8)*24 + 8
+      menu.Size = UDim2.fromOffset(220, height)
+      menu.Position = UDim2.fromOffset(pos.X + size.X - 220, pos.Y + size.Y + 6)
+
+      rebuild(menu)
+
+      blocker.MouseButton1Click:Connect(closePopup)
+      currentPopup = holder
+    end
+
+    btn.MouseButton1Click:Connect(function()
+      if currentPopup then closePopup() else openPopup() end
+    end)
+
     local function set(v) sel=v; btn.Text=v; if d.Callback then pcall(d.Callback, v) end end
     attachFlag(Orion, d.Flag, set, function() return sel end, sel)
-    return { Set=set, Add=function(v) table.insert(items,v); rebuild() end, Remove=function(v) for k,x in ipairs(items) do if x==v then table.remove(items,k) break end end; if sel==v then sel=items[1]; btn.Text=sel or "" end; rebuild() end }
+
+    return {
+      Set = set,
+      Add = function(v) table.insert(items,v) end,
+      Remove = function(v)
+        for k,x in ipairs(items) do if x==v then table.remove(items,k) break end end
+        if sel==v then sel=items[1]; btn.Text=sel or "" end
+      end
+    }
   end
 
   function api:AddTextbox(d)
