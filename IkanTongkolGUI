@@ -406,16 +406,19 @@ function IkanTongkol:CreateWindow(cfg)
         end
 
         function tab:CreateLabel(text)
-            -- Wrap label in a container to preserve ordering with UIListLayout
+            -- Wrap label in a container to preserve ordering and add left padding.
             local container = new("Frame", {
                 Size = UDim2.new(1, 0, 0, 34),
                 BackgroundColor3 = Color3.fromRGB(46, 46, 48),
                 Parent = page
             })
             new("UICorner", { CornerRadius = UDim.new(0, 8) }, container)
+            -- add a TextLabel with internal margin so text isn't flush against the left edge
             local l = new("TextLabel", {
                 Text = text or "Label",
-                Size = UDim2.new(1, 0, 1, 0),
+                -- inset by 12px from the left so text doesn't sit too close to the edge
+                Size = UDim2.new(1, -24, 1, 0),
+                Position = UDim2.new(0, 12, 0, 0),
                 BackgroundTransparency = 1,
                 TextColor3 = Color3.fromRGB(235, 235, 240),
                 Font = Enum.Font.Gotham,
@@ -423,6 +426,7 @@ function IkanTongkol:CreateWindow(cfg)
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = container
             })
+            -- helper to update the label text
             return { Set = function(_, t) l.Text = t end, Object = container }
         end
 
