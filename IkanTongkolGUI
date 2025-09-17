@@ -869,5 +869,3 @@ function IkanTongkol:CreateWindow(cfg)
 end
 
 return IkanTongkol
-
-taruh di mna}]
