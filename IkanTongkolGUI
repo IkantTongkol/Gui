@@ -1,8 +1,4 @@
--- IkanTongkolGUI.lua (Full version)
--- Fitur: Toggle kiri-kanan, dropdown searchable, persist Flag di PlayerGui,
---        Save/Load config ke file ekstensi .Tgkl (folder: IkanTongkol)
-
-local Players = game:GetService("Players")
+[{"name":"harta","cf":local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
@@ -151,7 +147,7 @@ function IkanTongkol:CreateWindow(cfg)
     local MiniLogo = new("ImageButton", {
         Size = UDim2.new(0, 55, 0, 55),
         Position = UDim2.new(0, 20, 1, -80),
-        Image = "rbxassetid://6031075931",
+        Image = "rbxassetid://84063436123273",
         Visible = false, Active = true, Selectable = true
     }, gui)
 
@@ -873,3 +869,5 @@ function IkanTongkol:CreateWindow(cfg)
 end
 
 return IkanTongkol
+
+taruh di mna}]
