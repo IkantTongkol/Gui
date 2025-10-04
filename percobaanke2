@@ -1,7 +1,12 @@
--- IkanTongkol GUI • Full Version (mobile-friendly, auto-attach fold)
--- Tabs, nested Fold (ikon '>'), Dropdown Popup (search + multi), Slider, Toggle, Input, Label
--- Persist Flags (PlayerGui + optional file), Minimize, Roll-up (▣/▢), Spacing controls, Global UIScale
--- by you & chatgpt
+-- IkanTongkol UI • Full Version (Fold/Paragraph API)
+-- Tabs, Fold (collapsible), Paragraph title, Dropdown Popup (search+multi), Slider, Toggle, Input, Label
+-- Persist flags (PlayerGui + optional filesystem), Minimize, Roll-up, Global UIScale
+-- API BARU:
+--   local sec = tab:CreateSectionFold({ Title = "..." })
+--   sec:CreateParagraphFold({ Title = "..." })
+--   sec:CreateButtonFold({...}), sec:CreateToggleFold({...}), sec:CreateInputFold({...})
+--   sec:CreateSliderFold({...}), sec:CreateDropdownFold({...})
+--   sec:CreateSectionFold({...}) -- sub-fold (opsional)
 
 local Players      = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -24,7 +29,7 @@ local function tween(inst, props, t, style, dir)
     local tw = TweenService:Create(inst, TweenInfo.new(t, style, dir), props); tw:Play(); return tw
 end
 
--- shape icons (no glyph dependency)
+-- shape icons (anti glyph missing)
 local function icon_X(parent, color, thick, size)
     local g = new("Frame",{BackgroundTransparency=1, Size=size or UDim2.fromOffset(16,16),
         AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.fromScale(0.5,0.5), Parent=parent})
@@ -40,7 +45,6 @@ local function icon_minus(parent, color, thick)
         Size=UDim2.new(1,-8,0, thick or 2), BorderSizePixel=0, BackgroundColor3=color or Color3.new(1,1,1),
         Parent=parent})
 end
--- roll-up icon: kotak outline + kotak kecil di tengah (▣ efek)
 local function icon_roll(parent, color)
     local box = new("Frame", {
         BackgroundTransparency = 1,
@@ -164,7 +168,7 @@ function IkanTongkol:CreateWindow(cfg)
     }, gui)
     new("UICorner", {CornerRadius=UDim.new(0,12)}, main)
     new("UIStroke", {Color=THEME.stroke, Thickness=1, Transparency=0.2}, main)
-    new("UIScale", {Scale = self._scale}, main)  -- GLOBAL SCALE
+    new("UIScale", {Scale = self._scale}, main)
 
     local top = new("Frame", {Size = UDim2.new(1,0,0,TOP_H), BackgroundColor3 = THEME.bg2, Active=true}, main)
     new("UICorner", {CornerRadius=UDim.new(0,12)}, top)
@@ -178,20 +182,13 @@ function IkanTongkol:CreateWindow(cfg)
         TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = THEME.text
     }, top)
 
-    -- topbar buttons (shape icons)
-    local CloseBtn = new("TextButton", {
-        Size = UDim2.new(0,30,0,30), Position = UDim2.new(1,-34,0.5,-15),
-        Text = "", BackgroundTransparency = 1, AutoButtonColor=false
-    }, top)
-    local BoxBtn = new("TextButton", {
-        Size = UDim2.new(0,30,0,30), Position = UDim2.new(1,-66,0.5,-15),
-        Text = "", BackgroundTransparency = 1, AutoButtonColor=false
-    }, top)
-    local MinBtn = new("TextButton", {
-        Size = UDim2.new(0,30,0,30), Position = UDim2.new(1,-98,0.5,-15),
-        Text = "", BackgroundTransparency = 1, AutoButtonColor=false
-    }, top)
-
+    -- topbar buttons
+    local CloseBtn = new("TextButton", {Size = UDim2.new(0,30,0,30), Position = UDim2.new(1,-34,0.5,-15),
+        Text = "", BackgroundTransparency = 1, AutoButtonColor=false}, top)
+    local BoxBtn   = new("TextButton", {Size = UDim2.new(0,30,0,30), Position = UDim2.new(1,-66,0.5,-15),
+        Text = "", BackgroundTransparency = 1, AutoButtonColor=false}, top)
+    local MinBtn   = new("TextButton", {Size = UDim2.new(0,30,0,30), Position = UDim2.new(1,-98,0.5,-15),
+        Text = "", BackgroundTransparency = 1, AutoButtonColor=false}, top)
     icon_X(CloseBtn, THEME.text, 2, UDim2.fromOffset(14,14))
     icon_minus(MinBtn, THEME.text, 2)
     local _, rollFill = icon_roll(BoxBtn, THEME.text)
@@ -208,7 +205,7 @@ function IkanTongkol:CreateWindow(cfg)
     new("UICorner",{CornerRadius=UDim.new(0,12)}, MiniDock)
     new("UIStroke",{Color=THEME.stroke, Thickness=1, Transparency=0.2}, MiniDock)
 
-    -- drag mini-dock (mouse + touch)
+    -- drag mini-dock
     do
         local dragging, startPos, startInput
         MiniDock.InputBegan:Connect(function(i)
@@ -233,7 +230,7 @@ function IkanTongkol:CreateWindow(cfg)
         main.Visible=true; MiniDock.Visible=false
     end)
 
-    -- roll-up (topbar only)
+    -- roll-up
     local isRolled, savedSizeRoll, savedPosRoll = false, main.Size, main.Position
     local sidebar, content
     local function setRolled(on, animate)
@@ -251,11 +248,9 @@ function IkanTongkol:CreateWindow(cfg)
             if animate ~= false then tween(main,{Size=savedSizeRoll, Position=savedPosRoll},0.16)
             else main.Size=savedSizeRoll; main.Position=savedPosRoll end
         end
-        rollFill.Visible = isRolled -- true => ▣, false => ▢
+        rollFill.Visible = isRolled
     end
     BoxBtn.MouseButton1Click:Connect(function() setRolled(not isRolled, true) end)
-
-    -- double click topbar
     do
         local lastClick=0
         top.InputBegan:Connect(function(i)
@@ -283,7 +278,7 @@ function IkanTongkol:CreateWindow(cfg)
     }, main)
     local pages = new("Folder", {Name="Pages"}, content)
 
-    -- drag topbar (mouse + touch)
+    -- drag topbar
     do
         local dragging, startPos, startInput
         top.InputBegan:Connect(function(i)
@@ -351,12 +346,15 @@ function IkanTongkol:CreateWindow(cfg)
             ScrollBarThickness = 6, Parent = self._pages
         })
         local list = new("UIListLayout", {Padding = UDim.new(0,8)}, page)
-        new("UIPadding", {PaddingTop=UDim.new(0,12), PaddingLeft=UDim.new(0,12), PaddingRight=UDim.new(0,12), PaddingBottom=UDim.new(0,12)}, page)
+        new("UIPadding", {
+            PaddingTop=UDim.new(0,12), PaddingLeft=UDim.new(0,12),
+            PaddingRight=UDim.new(0,12), PaddingBottom=UDim.new(0,12)
+        }, page)
         list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
             page.CanvasSize = UDim2.new(0,0,0, list.AbsoluteContentSize.Y + 12)
         end)
 
-        local tab = { _btn=btn, _page=page, _ui=self, _lastFold=nil }
+        local tab = { _btn=btn, _page=page, _ui=self }
 
         local function activate()
             for _,p in ipairs(self._pages:GetChildren()) do if p:IsA("ScrollingFrame") then p.Visible=false end end
@@ -374,16 +372,8 @@ function IkanTongkol:CreateWindow(cfg)
         btn.MouseButton1Click:Connect(activate)
         if not self._activeTab then activate() end
 
-        -- --- PATCH: helper agar tiap tab punya fold default sendiri ---
-        local function ensureFold()
-            if not tab._lastFold then
-                tab._lastFold = tab:CreateFold({ Title = "Section" })
-            end
-            return tab._lastFold
-        end
-
-        ---------------- BASIC CONTROLS (AUTO-ATTACH KE FOLD) ----------------
-        function tab:CreateLabel(text, _skipAutoAttach)
+        ------------- BASIC CONTROLS (tanpa fold) -------------
+        function tab:CreateLabel(text)
             local l = new("TextLabel", {
                 Size = UDim2.new(1,0,0,34), BackgroundColor3 = THEME.card,
                 TextColor3 = THEME.text, Font = Enum.Font.Gotham, TextSize = 14,
@@ -391,11 +381,10 @@ function IkanTongkol:CreateWindow(cfg)
                 Parent = page
             })
             new("UICorner", {CornerRadius=UDim.new(0,8)}, l)
-            if not _skipAutoAttach then ensureFold():_attach(l) end
             return { Set=function(_,t) l.Text=t end, Object=l }
         end
 
-        function tab:CreateButton(opts, _skipAutoAttach)
+        function tab:CreateButton(opts)
             opts = opts or {}
             local b = new("TextButton", {
                 Size = UDim2.new(1,0,0,34), BackgroundColor3 = THEME.card,
@@ -406,11 +395,10 @@ function IkanTongkol:CreateWindow(cfg)
             b.MouseEnter:Connect(function() tween(b, {BackgroundColor3 = THEME.hover}, 0.12) end)
             b.MouseLeave:Connect(function() tween(b, {BackgroundColor3 = THEME.card}, 0.12) end)
             b.MouseButton1Click:Connect(function() if opts.Callback then pcall(opts.Callback) end end)
-            if (not _skipAutoAttach) and (not opts.Root) then ensureFold():_attach(b) end
             return b
         end
 
-        function tab:CreateToggle(opts, _skipAutoAttach)
+        function tab:CreateToggle(opts)
             opts = opts or {}
             local flag = opts.Flag
             local default = opts.CurrentValue and true or false
@@ -461,11 +449,10 @@ function IkanTongkol:CreateWindow(cfg)
             local hit = new("TextButton",{BackgroundTransparency=1, Text="", AutoButtonColor=false, Size=UDim2.new(1,0,1,0), Parent=bg})
             hit.MouseButton1Click:Connect(function() set(not state, true) end)
 
-            if (not _skipAutoAttach) and (not opts.Root) then ensureFold():_attach(row) end
             return { Set=function(_,v) set(v,false) end, Get=function() return state end, Object=row }
         end
 
-        function tab:CreateInput(opts, _skipAutoAttach)
+        function tab:CreateInput(opts)
             opts = opts or {}
             local flag = opts.Flag
             local defaultText = opts.DefaultText or ""
@@ -490,16 +477,16 @@ function IkanTongkol:CreateWindow(cfg)
                 if flag then saveFlag(flag, box.Text) scheduleFlush() end
                 if enter and opts.Callback then pcall(opts.Callback, box.Text) end
             end)
-            if (not _skipAutoAttach) and (not opts.Root) then ensureFold():_attach(container) end
             return { Set=function(_,t) box.Text=t; if flag then saveFlag(flag, t) scheduleFlush() end end,
                      Get=function() return box.Text end, Object=container }
         end
 
-        function tab:CreateSlider(opts, _skipAutoAttach)
+        function tab:CreateSlider(opts)
             opts = opts or {}
+            local THEME = self._ui and self._ui._theme or THEME
             local flag = opts.Flag
-            local min  = tonumber(opts.Min or 0)
-            local max  = tonumber(opts.Max or 100); if max <= min then max = min + 1 end
+            local min  = tonumber(opts.Min or opts.Range and opts.Range[1] or 0)
+            local max  = tonumber(opts.Max or opts.Range and opts.Range[2] or 100); if max <= min then max = min + 1 end
             local step = tonumber(opts.Step or 1);  if step <= 0 then step = 1 end
             local precision = tonumber(opts.Precision or 0)
 
@@ -508,28 +495,28 @@ function IkanTongkol:CreateWindow(cfg)
             value = math.clamp(value, min, max)
 
             local row = new("Frame",{Size=UDim2.new(1,0,0,54), BackgroundTransparency=1, Parent=page})
-            local bg  = new("Frame",{Size=UDim2.new(1,0,1,0), BackgroundColor3=self._ui._theme.card, Parent=row})
+            local bg  = new("Frame",{Size=UDim2.new(1,0,1,0), BackgroundColor3=THEME.card, Parent=row})
             new("UICorner",{CornerRadius=UDim.new(0,8)}, bg)
 
             new("TextLabel",{
                 BackgroundTransparency=1, Text=tostring(opts.Name or "Slider"),
                 TextXAlignment=Enum.TextXAlignment.Left, Font=Enum.Font.Gotham, TextSize=14,
-                TextColor3=self._ui._theme.text, Size=UDim2.new(1,-100,0,20), Position=UDim2.new(0,12,0,6), Parent=bg
+                TextColor3=THEME.text, Size=UDim2.new(1,-100,0,20), Position=UDim2.new(0,12,0,6), Parent=bg
             })
             local valLabel = new("TextLabel",{
                 BackgroundTransparency=1,
                 Text="", TextXAlignment=Enum.TextXAlignment.Right, Font=Enum.Font.GothamBold, TextSize=14,
-                TextColor3=self._ui._theme.text, Size=UDim2.new(0,88,0,20), Position=UDim2.new(1,-94,0,6), Parent=bg
+                TextColor3=THEME.text, Size=UDim2.new(0,88,0,20), Position=UDim2.new(1,-94,0,6), Parent=bg
             })
 
             local track = new("Frame",{
                 Position=UDim2.new(0,12,0,32), Size=UDim2.new(1,-24,0,6),
-                BackgroundColor3=self._ui._theme.hover, BorderSizePixel=0, Parent=bg
+                BackgroundColor3=THEME.hover, BorderSizePixel=0, Parent=bg
             })
             new("UICorner",{CornerRadius=UDim.new(0,3)}, track)
-            new("UIStroke",{Color=self._ui._theme.stroke, Thickness=1, Transparency=0.2}, track)
+            new("UIStroke",{Color=THEME.stroke, Thickness=1, Transparency=0.2}, track)
 
-            local fill = new("Frame",{BackgroundColor3=self._ui._theme.accent, BorderSizePixel=0, Parent=track})
+            local fill = new("Frame",{BackgroundColor3=THEME.accent, BorderSizePixel=0, Parent=track})
             new("UICorner",{CornerRadius=UDim.new(0,3)}, fill)
 
             local knob = new("Frame",{
@@ -580,32 +567,23 @@ function IkanTongkol:CreateWindow(cfg)
                 end
             end)
 
-            if (not _skipAutoAttach) and (not opts.Root) then ensureFold():_attach(row) end
             return {
-                Set=function(_,v)
-                    local n = tonumber(v); if n then
-                        if opts.Step then n = roundStep(n) end
-                        value = math.clamp(n, min, max)
-                        render(false); if flag then saveFlag(flag,value) scheduleFlush() end
-                    end
-                end,
+                Set=function(_,v) value=roundStep(tonumber(v) or value); render(false); if flag then saveFlag(flag,value) scheduleFlush() end end,
                 Get=function() return value end,
                 Object=row
             }
         end
 
-        --------------- FOLD (row + ikon '>') ---------------
-        function tab:CreateFold(opts)
+        --------------- FOLD (collapsible) ---------------
+        local function buildFold(TAB, parentPage, opts)
             opts = opts or {}
-            local THEME = self._ui._theme
+            local THEME = TAB._ui._theme
             local titleText = opts.Title or opts.Name or "Section"
             local foldFlag  = opts.Flag or ("fold:"..tostring(titleText))
             local savedOpen = loadFlag(foldFlag)
             local open = (type(savedOpen)=="boolean") and savedOpen or false
 
-            local TAB = self
-
-            local card = new("Frame", {Size=UDim2.new(1,0,0,48), BackgroundColor3 = THEME.card, Parent=page})
+            local card = new("Frame", {Size=UDim2.new(1,0,0,48), BackgroundColor3 = THEME.card, Parent=parentPage})
             new("UICorner",{CornerRadius=UDim.new(0,10)}, card)
             new("UIStroke",{Color=THEME.stroke, Thickness=1, Transparency=0.2}, card)
 
@@ -633,13 +611,13 @@ function IkanTongkol:CreateWindow(cfg)
                 Position=UDim2.new(0,0,0,48), Size=UDim2.new(1,0,0, open and 1 or 0),
                 BackgroundTransparency=1, ClipsDescendants=true, Parent=card
             })
-            local gap = tonumber(opts.Gap or self._ui._rowGap or 8)
+            local gap = tonumber(TAB._ui._rowGap or 8)
             local bodyList = new("UIListLayout",{Padding=UDim.new(0, gap)}, body)
             new("UIPadding",{
-                PaddingTop=UDim.new(0, self._ui._bodyPad or 10),
-                PaddingBottom=UDim.new(0, self._ui._bodyPad or 10),
-                PaddingLeft=UDim.new(0, self._ui._bodyPad or 10),
-                PaddingRight=UDim.new(0, self._ui._bodyPad or 10)
+                PaddingTop=UDim.new(0, TAB._ui._bodyPad or 10),
+                PaddingBottom=UDim.new(0, TAB._ui._bodyPad or 10),
+                PaddingLeft=UDim.new(0, TAB._ui._bodyPad or 10),
+                PaddingRight=UDim.new(0, TAB._ui._bodyPad or 10)
             }, body)
 
             local function resize()
@@ -659,61 +637,48 @@ function IkanTongkol:CreateWindow(cfg)
 
             if open then task.defer(resize) end
 
-            local fold = {}
-            fold._root = card
-
+            -- FOLD API (baru)
+            local fold = { _root = card, _body = body, _tab = TAB }
             function fold:SetTitle(t) lbl.Text = tostring(t or "") end
             function fold:Open() open=true; resize(); saveFlag(foldFlag, true); scheduleFlush() end
             function fold:Close() open=false; resize(); saveFlag(foldFlag, false); scheduleFlush() end
 
+            -- helper attach
             local function attach(obj)
                 local fr = obj and (obj.Object or obj)
                 if typeof(fr)=="Instance" then fr.Parent = body end
                 resize(); return obj
             end
 
-            function fold:AddSection(title)
-                local sec = new("Frame",{Size=UDim2.new(1,0,0,28), BackgroundTransparency=1})
+            -- === PARAGRAPH JUDUL (seperti subheading) ===
+            function fold:CreateParagraphFold(o)
+                o = o or {}
+                local title = (type(o)=="string") and o or (o.Title or o.Name or "Section")
+                local wrap = new("Frame",{BackgroundTransparency=1, Size=UDim2.new(1,0,0,28)})
                 new("TextLabel",{
-                    Text=tostring(title or "Section"), BackgroundTransparency=1,
+                    Text=tostring(title), BackgroundTransparency=1,
                     TextXAlignment=Enum.TextXAlignment.Left, Font=Enum.Font.GothamBold, TextSize=13,
                     TextColor3=THEME.textMuted, Size=UDim2.new(1,0,0,20), Position=UDim2.new(0,2,0,0),
-                    Parent=sec
+                    Parent=wrap
                 })
-                new("Frame",{Size=UDim2.new(1,0,0,1), Position=UDim2.new(0,0,1,-1), BackgroundColor3=THEME.stroke, BorderSizePixel=0, Parent=sec})
-                sec.Parent = body; resize(); return sec
-            end
-            function fold:AddDivider()
-                attach(new("Frame",{Size=UDim2.new(1,0,0,1), BackgroundColor3=THEME.stroke, BorderSizePixel=0}))
-            end
-            function fold:AddSpacer(px)
-                attach(new("Frame",{BackgroundTransparency=1, Size=UDim2.new(1,0,0, tonumber(px) or ((TAB._ui and TAB._ui._rowGap) or 8))}))
-            end
-            function fold:AddParagraph(opts)
-                opts = opts or {}
-                local wrap = new("Frame",{BackgroundTransparency=1, AutomaticSize=Enum.AutomaticSize.Y, Size=UDim2.new(1,0,0,0), Parent=body})
-                new("TextLabel",{
-                    BackgroundTransparency=1, Text=tostring(opts.Text or ""), TextWrapped=true, RichText=true,
-                    TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top,
-                    Font=Enum.Font.Gotham, TextSize=13, TextColor3=THEME.textMuted,
-                    AutomaticSize=Enum.AutomaticSize.Y, Size=UDim2.new(1,-6,0,0), Position=UDim2.new(0,3,0,0), Parent=wrap
-                })
-                resize(); return {Object=wrap}
+                new("Frame",{Size=UDim2.new(1,0,0,1), Position=UDim2.new(0,0,1,-1), BackgroundColor3=THEME.stroke, BorderSizePixel=0, Parent=wrap})
+                wrap.Parent = body; resize()
+                return { Object = wrap }
             end
 
-            -- adaptor ke kontrol tab (pakai _skipAutoAttach=true supaya tidak dobel)
-            function fold:AddButton(o)   return attach(TAB:CreateButton(o, true)) end
-            function fold:AddToggle(o)   return attach(TAB:CreateToggle(o, true)) end
-            function fold:AddInput(o)    return attach(TAB:CreateInput(o, true)) end
-            function fold:AddLabel(t)    return attach(TAB:CreateLabel(t, true)) end
-            function fold:AddSlider(o)   return attach(TAB:CreateSlider(o, true)) end
+            -- === Kontrol di dalam FOLD (langsung) ===
+            function fold:CreateButtonFold(o)   return attach(TAB:CreateButton(o)) end
+            function fold:CreateToggleFold(o)   return attach(TAB:CreateToggle(o)) end
+            function fold:CreateInputFold(o)    return attach(TAB:CreateInput(o)) end
+            function fold:CreateLabelFold(t)    return attach(TAB:CreateLabel(t)) end
+            function fold:CreateSliderFold(o)   return attach(TAB:CreateSlider(o)) end
+            function fold:CreateDropdownFold(o) return attach((TAB.AddDropdownPopup and TAB:AddDropdownPopup(o)) or TAB:CreateDropdownPopup(o)) end
 
-            -- DROPDOWN POPUP (dibuat langsung di fold)
-            function fold:AddDropdownPopup(o)
+            -- Dropdown Popup (kalau tab belum punya versi “CreateDropdownPopup”)
+            function tab:CreateDropdownPopup(o)
                 o=o or {}
                 local flag = o.Flag
                 local opts = o.Options or {}
-
                 local saved = flag and loadFlag(flag)
                 local current
                 if o.MultiSelection then
@@ -725,42 +690,37 @@ function IkanTongkol:CreateWindow(cfg)
                 local header = new("TextButton",{
                     Size=UDim2.new(1,0,0,34), BackgroundColor3=THEME.card,
                     TextColor3 = THEME.text, Font=Enum.Font.Gotham, TextSize=14,
-                    AutoButtonColor=false, Text=tostring(o.Name or "Select")
+                    AutoButtonColor=false, Text=tostring(o.Name or "Select"), Parent=page
                 })
                 new("UICorner",{CornerRadius=UDim.new(0,8)}, header)
                 header.MouseEnter:Connect(function() tween(header,{BackgroundColor3=THEME.hover},0.12) end)
                 header.MouseLeave:Connect(function() tween(header,{BackgroundColor3=THEME.card},0.12) end)
-                header.Parent = body; resize()
 
                 local function openPopup()
                     local overlay = new("Frame",{
                         Size=UDim2.fromScale(1,1), BackgroundColor3=Color3.new(0,0,0),
                         BackgroundTransparency = (o.Dim ~= nil) and tonumber(o.Dim) or 0.6,
-                        ZIndex=1000, Active=true, Parent=TAB._ui._gui
+                        ZIndex=1000, Active=true, Parent=self._gui
                     })
-                    local back = new("TextButton",{
-                        Text="", AutoButtonColor=false, BackgroundTransparency=1,
-                        Size=UDim2.fromScale(1,1), ZIndex=1000, Parent=overlay
-                    })
+                    local back = new("TextButton",{Text="", AutoButtonColor=false, BackgroundTransparency=1,
+                        Size=UDim2.fromScale(1,1), ZIndex=1000, Parent=overlay})
                     back.MouseButton1Click:Connect(function() overlay:Destroy() end)
 
                     local modal = new("Frame",{
                         AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.fromScale(0.5,0.5),
-                        Size=UDim2.new(0, math.min(420, TAB._ui._main.AbsoluteSize.X-60), 0, 360),
+                        Size=UDim2.new(0, math.min(420, self._main.AbsoluteSize.X-60), 0, 360),
                         BackgroundColor3=THEME.bg2, ZIndex=1001, Parent=overlay, Active=true
                     })
-                    new("UIScale", { Scale = TAB._ui._scale or 1.0 }, modal)
+                    new("UIScale", { Scale = self._scale or 1.0 }, modal)
                     new("UICorner",{CornerRadius=UDim.new(0,12)}, modal)
                     new("UIStroke",{Color=THEME.stroke, Thickness=1, Transparency=0.2}, modal)
 
-                    new("TextLabel",{
-                        BackgroundTransparency=1, Text = tostring(o.PopupTitle or o.Name or "Select"),
+                    new("TextLabel",{BackgroundTransparency=1, Text = tostring(o.PopupTitle or o.Name or "Select"),
                         TextColor3=THEME.text, Font=Enum.Font.GothamBold, TextSize=15,
                         AnchorPoint=Vector2.new(0,0), Position=UDim2.new(0,14,0,10),
-                        Size=UDim2.new(1,-80,0,20), ZIndex=1002, Parent=modal
-                    })
-                    local closeB = new("TextButton",{Text="", BackgroundTransparency=1,
-                        AutoButtonColor=false, AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,-10,0,8),
+                        Size=UDim2.new(1,-80,0,20), ZIndex=1002, Parent=modal})
+                    local closeB = new("TextButton",{Text="", BackgroundTransparency=1, AutoButtonColor=false,
+                        AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,-10,0,8),
                         Size=UDim2.new(0,24,0,24), ZIndex=1002, Parent=modal})
                     icon_X(closeB, THEME.textMuted, 2, UDim2.fromOffset(14,14))
                     closeB.MouseButton1Click:Connect(function() overlay:Destroy() end)
@@ -865,60 +825,27 @@ function IkanTongkol:CreateWindow(cfg)
                 end
 
                 header.MouseButton1Click:Connect(openPopup)
-                return attach({ Object = header, SetOptions=function(_,arr) opts = arr or {} end,
-                                Set=function(_,v) current=v; if flag then saveFlag(flag,v) scheduleFlush() end end,
-                                Get=function() return current end })
+                return { Object = header, SetOptions=function(_,arr) opts = arr or {} end,
+                         Set=function(_,v) current=v; if flag then saveFlag(flag,v) scheduleFlush() end end,
+                         Get=function() return current end }
             end
 
-            function fold:AddSubFold(o)
-                local sub = TAB:CreateFold(o or {})
-                if sub and sub._root then sub._root.Parent = body end
-                resize(); return sub
+            -- Sub-fold (opsional)
+            function fold:CreateSectionFold(o)
+                return buildFold(TAB, body, o or {})
             end
 
-            function fold:_attach(inst) inst.Parent = body; resize() end
-
-            self._lastFold = fold
             return fold
         end
 
-        -- ===================== Tab helpers & alias =====================
-        local function _titleOf(x, fallback)
-            if type(x) == "table" then return x.Title or x.Name or x[1] or fallback end
-            return tostring(x or fallback)
-        end
-        function tab:CrateFold(x) return self:CreateFold({ Title = _titleOf(x, "Fold") }) end
-        function tab:CreateSection(x)
-            local t = _titleOf(x, "Section")
-            local f = self._lastFold
-            if not f or not f.AddSection then
-                f = self:CreateFold({ Title = "Section" })
-                self._lastFold = f
-            end
-            return f:AddSection(t)
-        end
-        local function _ensureFold(selfTab)
-            if not selfTab._lastFold then selfTab._lastFold = selfTab:CreateFold({ Title = "Section" }) end
-            return selfTab._lastFold
+        function tab:CreateFold(opts)
+            return buildFold(self, page, opts or {})
         end
 
-        -- Alias yang selalu masuk fold aktif
-        function tab:AddToggle(o)         return _ensureFold(self):AddToggle(o) end
-        function tab:AddButton(o)         return _ensureFold(self):AddButton(o) end
-        function tab:AddInput(o)          return _ensureFold(self):AddInput(o) end
-        function tab:AddLabel(t)          return _ensureFold(self):AddLabel(t) end
-        function tab:AddParagraph(o)      return _ensureFold(self):AddParagraph(o) end
-        function tab:AddDivider()         return _ensureFold(self):AddDivider() end
-        function tab:AddSpacer(px)        return _ensureFold(self):AddSpacer(px) end
-        function tab:AddDropdownPopup(o)  return _ensureFold(self):AddDropdownPopup(o) end
-        function tab:AddSlider(o)         return _ensureFold(self):AddSlider(o) end
-        function tab:AddSubFold(o)
-            local parent = _ensureFold(self)
-            local sub = parent:AddSubFold(o)
-            self._lastFold = sub
-            return sub
+        -- Alias sesuai permintaan
+        function tab:CreateSectionFold(opts)
+            return self:CreateFold(opts)
         end
-        -- =====================================================================
 
         return tab
     end
