@@ -1,8 +1,3 @@
--- IkanTongkol GUI • Full Version (mobile-friendly)
--- Tabs, nested Fold, Dropdown Popup (search + multi), Slider, Toggle, Input, Label
--- Persist Flags, Minimize, Roll-up (shape), Spacing controls
--- by you & chatgpt
-
 local Players      = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local HttpService  = game:GetService("HttpService")
@@ -147,6 +142,7 @@ function IkanTongkol:CreateWindow(cfg)
     local WIN_SIZE = cfg.Size or UDim2.fromOffset(760, 440)
     local TOP_H    = cfg.TopbarHeight or 44
     local SBAR_W   = cfg.SidebarWidth or 180
+    self._scale    = tonumber(cfg.Scale or cfg.Density or cfg.Zoom) or 1.0
 
     local gui = new("ScreenGui", {
         Name = cfg.Name or "IkanTongkolUI",
@@ -163,6 +159,7 @@ function IkanTongkol:CreateWindow(cfg)
     }, gui)
     new("UICorner", {CornerRadius=UDim.new(0,12)}, main)
     new("UIStroke", {Color=THEME.stroke, Thickness=1, Transparency=0.2}, main)
+    new("UIScale", {Scale = self._scale}, main)  -- GLOBAL SCALE
 
     local top = new("Frame", {Size = UDim2.new(1,0,0,TOP_H), BackgroundColor3 = THEME.bg2, Active=true}, main)
     new("UICorner", {CornerRadius=UDim.new(0,12)}, top)
@@ -474,10 +471,10 @@ function IkanTongkol:CreateWindow(cfg)
             })
             new("UICorner",{CornerRadius=UDim.new(0,6)}, box)
             box.FocusLost:Connect(function(enter)
-                if flag then saveFlag(flag, box.Text); scheduleFlush() end
+                if flag then saveFlag(flag, box.Text) scheduleFlush() end
                 if enter and opts.Callback then pcall(opts.Callback, box.Text) end
             end)
-            return { Set=function(_,t) box.Text=t; if flag then saveFlag(flag, t); scheduleFlush() end end,
+            return { Set=function(_,t) box.Text=t; if flag then saveFlag(flag, t) scheduleFlush() end end,
                      Get=function() return box.Text end, Object=container }
         end
 
@@ -551,7 +548,7 @@ function IkanTongkol:CreateWindow(cfg)
                 local v = roundStep(min + rel*(max - min))
                 if v ~= value then
                     value = v; render(false)
-                    if flag then saveFlag(flag, value); scheduleFlush() end
+                    if flag then saveFlag(flag, value) scheduleFlush() end
                     if opts.Callback then pcall(opts.Callback, value) end
                 end
             end
@@ -569,7 +566,7 @@ function IkanTongkol:CreateWindow(cfg)
             end)
 
             return {
-                Set=function(_,v) value=roundStep(tonumber(v) or value); render(false); if flag then saveFlag(flag,value); scheduleFlush() end end,
+                Set=function(_,v) value=roundStep(tonumber(v) or value); render(false); if flag then saveFlag(flag,value) scheduleFlush() end end,
                 Get=function() return value end,
                 Object=row
             }
@@ -724,13 +721,12 @@ function IkanTongkol:CreateWindow(cfg)
                     })
                     back.MouseButton1Click:Connect(function() overlay:Destroy() end)
 
-                    local maxW = TAB._ui._main.AbsoluteSize.X - 60
-                    local w = math.clamp(maxW, 220, 420)
                     local modal = new("Frame",{
                         AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.fromScale(0.5,0.5),
-                        Size=UDim2.new(0, w, 0, 360),
+                        Size=UDim2.new(0, math.min(420, TAB._ui._main.AbsoluteSize.X-60), 0, 360),
                         BackgroundColor3=THEME.bg2, ZIndex=1001, Parent=overlay, Active=true
                     })
+                    new("UIScale", { Scale = TAB._ui._scale or 1.0 }, modal) -- popup ikut scale
                     new("UICorner",{CornerRadius=UDim.new(0,12)}, modal)
                     new("UIStroke",{Color=THEME.stroke, Thickness=1, Transparency=0.2}, modal)
 
@@ -825,14 +821,14 @@ function IkanTongkol:CreateWindow(cfg)
                                         local res = {}
                                         for _,ch in ipairs(opts) do if selectedSet[tostring(ch)] then table.insert(res, ch) end end
                                         current = res
-                                        if flag then saveFlag(flag, current); scheduleFlush() end
+                                        if flag then saveFlag(flag, current) scheduleFlush() end
                                         if o.Callback then pcall(o.Callback, res) end
                                     else
                                         for _,c2 in ipairs(listF:GetChildren()) do
                                             if c2:IsA("TextButton") and c2 ~= b then paintSelected(c2,false) end
                                         end
                                         sel = true; current = choice; paintSelected(b, true)
-                                        if flag then saveFlag(flag, current); scheduleFlush() end
+                                        if flag then saveFlag(flag, current) scheduleFlush() end
                                         if o.Callback then pcall(o.Callback, choice) end
                                         overlay:Destroy()
                                     end
@@ -849,7 +845,7 @@ function IkanTongkol:CreateWindow(cfg)
 
                 local api = {
                     SetOptions = function(_, arr) opts = arr or {}; end,
-                    Set = function(_, v) current = v; if flag then saveFlag(flag, v); scheduleFlush() end end,
+                    Set = function(_, v) current = v; if flag then saveFlag(flag, v) scheduleFlush() end end,
                     Get = function() return current end,
                     Object = header
                 }
@@ -873,11 +869,7 @@ function IkanTongkol:CreateWindow(cfg)
             if type(x) == "table" then return x.Title or x.Name or x[1] or fallback end
             return tostring(x or fallback)
         end
-        -- dua alias biar kompatibel
-        function tab:CreateFoldAlias(x) return self:CreateFold({ Title = _titleOf(x, "Fold") }) end
-        tab.CrateFold  = tab.CreateFoldAlias
-        tab.CreateFoldSimple = tab.CreateFoldAlias
-
+        function tab:CrateFold(x) return self:CreateFold({ Title = _titleOf(x, "Fold") }) end
         function tab:CreateSection(x)
             local t = _titleOf(x, "Section")
             local f = self._lastFold
