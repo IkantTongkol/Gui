@@ -453,4 +453,451 @@ function IkanTongkol:CreateWindow(cfg)
             local flag = opts.Flag
             local defaultText = opts.DefaultText or ""
             local saved = flag and loadFlag(flag)
-            local startText = (type(saved)=="string" or type(saved)=="numb
+            local startText = (type(saved)=="string" or type(saved)=="number") and tostring(saved) or defaultText
+
+            local container = new("Frame",{Size=UDim2.new(1,0,0,46), BackgroundTransparency=1, Parent=page})
+            new("TextLabel",{
+                BackgroundTransparency=1, Text=tostring(opts.Name or "Input"),
+                Size=UDim2.new(1,0,0,18), Font=Enum.Font.Gotham, TextSize=13,
+                TextColor3=THEME.text, TextXAlignment=Enum.TextXAlignment.Left, Parent=container
+            })
+            local box = new("TextBox",{
+                Text = startText, PlaceholderText = opts.PlaceholderText or "",
+                ClearTextOnFocus = false,
+                Size=UDim2.new(1,0,0,24), Position=UDim2.new(0,0,0,20),
+                BackgroundColor3 = THEME.card, TextColor3 = THEME.text,
+                Font=Enum.Font.Gotham, TextSize=14, Parent=container
+            })
+            new("UICorner",{CornerRadius=UDim.new(0,6)}, box)
+            box.FocusLost:Connect(function(enter)
+                if flag then saveFlag(flag, box.Text) scheduleFlush() end
+                if enter and opts.Callback then pcall(opts.Callback, box.Text) end
+            end)
+            return { Set=function(_,t) box.Text=t; if flag then saveFlag(flag, t) scheduleFlush() end end,
+                     Get=function() return box.Text end, Object=container }
+        end
+
+        -- =============== SLIDER =================
+        function tab:CreateSlider(opts)
+            opts = opts or {}
+            local THEME = self._ui._theme
+            local flag = opts.Flag
+            local min  = tonumber(opts.Min or 0)
+            local max  = tonumber(opts.Max or 100); if max <= min then max = min + 1 end
+            local step = tonumber(opts.Step or 1);  if step <= 0 then step = 1 end
+            local precision = tonumber(opts.Precision or 0)
+
+            local saved = flag and loadFlag(flag)
+            local value = tonumber(saved) or tonumber(opts.CurrentValue) or min
+            value = math.clamp(value, min, max)
+
+            local row = new("Frame",{Size=UDim2.new(1,0,0,54), BackgroundTransparency=1, Parent=page})
+            local bg  = new("Frame",{Size=UDim2.new(1,0,1,0), BackgroundColor3=THEME.card, Parent=row})
+            new("UICorner",{CornerRadius=UDim.new(0,8)}, bg)
+
+            new("TextLabel",{
+                BackgroundTransparency=1, Text=tostring(opts.Name or "Slider"),
+                TextXAlignment=Enum.TextXAlignment.Left, Font=Enum.Font.Gotham, TextSize=14,
+                TextColor3=THEME.text, Size=UDim2.new(1,-100,0,20), Position=UDim2.new(0,12,0,6), Parent=bg
+            })
+            local valLabel = new("TextLabel",{
+                BackgroundTransparency=1,
+                Text="", TextXAlignment=Enum.TextXAlignment.Right, Font=Enum.Font.GothamBold, TextSize=14,
+                TextColor3=THEME.text, Size=UDim2.new(0,88,0,20), Position=UDim2.new(1,-94,0,6), Parent=bg
+            })
+
+            local track = new("Frame",{
+                Position=UDim2.new(0,12,0,32), Size=UDim2.new(1,-24,0,6),
+                BackgroundColor3=THEME.hover, BorderSizePixel=0, Parent=bg
+            })
+            new("UICorner",{CornerRadius=UDim.new(0,3)}, track)
+            new("UIStroke",{Color=THEME.stroke, Thickness=1, Transparency=0.2}, track)
+
+            local fill = new("Frame",{BackgroundColor3=THEME.accent, BorderSizePixel=0, Parent=track})
+            new("UICorner",{CornerRadius=UDim.new(0,3)}, fill)
+
+            local knob = new("Frame",{
+                AnchorPoint=Vector2.new(0.5,0.5), Size=UDim2.new(0,14,0,14),
+                BackgroundColor3=Color3.new(1,1,1), Parent=track
+            })
+            new("UICorner",{CornerRadius=UDim.new(0,7)}, knob)
+
+            local function roundStep(x)
+                local t = min + math.floor((x - min)/step + 0.5)*step
+                return math.clamp(t, min, max)
+            end
+            local function fmt(v)
+                if precision > 0 then return string.format("%."..precision.."f", v) end
+                return tostring(math.floor(v + 0.5))
+            end
+            local function render(inst)
+                local t = inst and 0 or 0.08
+                local a = (value - min)/(max - min)
+                tween(fill, {Size=UDim2.new(a,0,1,0)}, t)
+                tween(knob, {Position=UDim2.new(a,0,0.5,0)}, t)
+                valLabel.Text = fmt(value)
+            end
+            render(true)
+
+            local dragging=false
+            local function setFromX(x)
+                local w = track.AbsoluteSize.X
+                if w <= 0 then return end
+                local rel = math.clamp((x - track.AbsolutePosition.X)/w, 0, 1)
+                local v = roundStep(min + rel*(max - min))
+                if v ~= value then
+                    value = v; render(false)
+                    if flag then saveFlag(flag, value) scheduleFlush() end
+                    if opts.Callback then pcall(opts.Callback, value) end
+                end
+            end
+
+            track.InputBegan:Connect(function(i)
+                if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+                    dragging=true; setFromX(i.Position.X)
+                    i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then dragging=false end end)
+                end
+            end)
+            UserInput.InputChanged:Connect(function(i)
+                if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
+                    setFromX(i.Position.X)
+                end
+            end)
+
+            return {
+                Set=function(_,v) value=roundStep(tonumber(v) or value); render(false); if flag then saveFlag(flag,value) scheduleFlush() end end,
+                Get=function() return value end,
+                Object=row
+            }
+        end
+
+        --------------- FOLD (row + chevron) ---------------
+        function tab:CreateFold(opts)
+            opts = opts or {}
+            local THEME = self._ui._theme
+            local titleText = opts.Title or opts.Name or "Section"
+            local foldFlag  = opts.Flag or ("fold:"..tostring(titleText))
+            local savedOpen = loadFlag(foldFlag)
+            local open = (type(savedOpen)=="boolean") and savedOpen or false
+
+            local TAB = self -- simpan referensi tab untuk fungsi dalam fold
+
+            local card = new("Frame", {Size=UDim2.new(1,0,0,48), BackgroundColor3 = THEME.card, Parent=page})
+            new("UICorner",{CornerRadius=UDim.new(0,10)}, card)
+            new("UIStroke",{Color=THEME.stroke, Thickness=1, Transparency=0.2}, card)
+
+            local head = new("TextButton",{Size=UDim2.new(1,0,0,48), BackgroundTransparency=1, AutoButtonColor=false, Text="", Parent=card})
+            local lbl = new("TextLabel",{
+                BackgroundTransparency=1, Position=UDim2.new(0,14,0,0), Size=UDim2.new(1,-64,1,0),
+                TextXAlignment=Enum.TextXAlignment.Left, Text=titleText,
+                Font=Enum.Font.GothamBold, TextSize=14, TextColor3=THEME.text, Parent=head
+            })
+
+            -- chevron shape (no unicode)
+            local chevHolder = new("Frame",{
+                AnchorPoint=Vector2.new(1,0.5), Position=UDim2.new(1,-12,0.5,0), Size=UDim2.fromOffset(14,14),
+                BackgroundTransparency=1, Parent=head
+            })
+            local chev = icon_chevron(chevHolder, THEME.textMuted)
+            chevHolder.Rotation = open and 90 or 0
+
+            local body = new("Frame",{
+                Position=UDim2.new(0,0,0,48), Size=UDim2.new(1,0,0, open and 1 or 0),
+                BackgroundTransparency=1, ClipsDescendants=true, Parent=card
+            })
+            local gap = tonumber(opts.Gap or self._ui._rowGap or 8)
+            local bodyList = new("UIListLayout",{Padding=UDim.new(0, gap)}, body)
+            new("UIPadding",{
+                PaddingTop=UDim.new(0, self._ui._bodyPad or 10),
+                PaddingBottom=UDim.new(0, self._ui._bodyPad or 10),
+                PaddingLeft=UDim.new(0, self._ui._bodyPad or 10),
+                PaddingRight=UDim.new(0, self._ui._bodyPad or 10)
+            }, body)
+
+            local function resize()
+                local h = open and (48 + bodyList.AbsoluteContentSize.Y + 14) or 48
+                tween(card, {Size=UDim2.new(1,0,0,h)}, 0.16)
+                tween(body, {Size=UDim2.new(1,0,0, math.max(0,h-48))}, 0.16)
+                tween(chevHolder, {Rotation = open and 90 or 0}, 0.12)
+                tween(card, {BackgroundColor3 = open and THEME.bg2 or THEME.card}, 0.12)
+            end
+            bodyList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(resize)
+
+            head.MouseEnter:Connect(function() if not open then tween(card,{BackgroundColor3=THEME.hover},0.12) end end)
+            head.MouseLeave:Connect(function() if not open then tween(card,{BackgroundColor3=THEME.card},0.12) end end)
+            head.MouseButton1Click:Connect(function()
+                open = not open; resize(); saveFlag(foldFlag, open); scheduleFlush()
+            end)
+
+            if open then task.defer(resize) end
+
+            local fold = {}
+            fold._root = card
+
+            function fold:SetTitle(t) lbl.Text = tostring(t or "") end
+            function fold:Open() open=true; resize(); saveFlag(foldFlag, true); scheduleFlush() end
+            function fold:Close() open=false; resize(); saveFlag(foldFlag, false); scheduleFlush() end
+
+            local function attach(obj)
+                local fr = obj and (obj.Object or obj)
+                if typeof(fr)=="Instance" then fr.Parent = body end
+                resize(); return obj
+            end
+
+            function fold:AddSection(title)
+                local sec = new("Frame",{Size=UDim2.new(1,0,0,28), BackgroundTransparency=1})
+                new("TextLabel",{
+                    Text=tostring(title or "Section"), BackgroundTransparency=1,
+                    TextXAlignment=Enum.TextXAlignment.Left, Font=Enum.Font.GothamBold, TextSize=13,
+                    TextColor3=THEME.textMuted, Size=UDim2.new(1,0,0,20), Position=UDim2.new(0,2,0,0),
+                    Parent=sec
+                })
+                new("Frame",{Size=UDim2.new(1,0,0,1), Position=UDim2.new(0,0,1,-1), BackgroundColor3=THEME.stroke, BorderSizePixel=0, Parent=sec})
+                sec.Parent = body; resize(); return sec
+            end
+            function fold:AddDivider()
+                attach(new("Frame",{Size=UDim2.new(1,0,0,1), BackgroundColor3=THEME.stroke, BorderSizePixel=0}))
+            end
+            function fold:AddSpacer(px)
+                attach(new("Frame",{BackgroundTransparency=1, Size=UDim2.new(1,0,0, tonumber(px) or (self._ui and self._ui._rowGap or 8))}))
+            end
+            function fold:AddParagraph(opts)
+                opts = opts or {}
+                local wrap = new("Frame",{BackgroundTransparency=1, AutomaticSize=Enum.AutomaticSize.Y, Size=UDim2.new(1,0,0,0), Parent=body})
+                new("TextLabel",{
+                    BackgroundTransparency=1, Text=tostring(opts.Text or ""), TextWrapped=true, RichText=true,
+                    TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top,
+                    Font=Enum.Font.Gotham, TextSize=13, TextColor3=THEME.textMuted,
+                    AutomaticSize=Enum.AutomaticSize.Y, Size=UDim2.new(1,-6,0,0), Position=UDim2.new(0,3,0,0), Parent=wrap
+                })
+                resize(); return {Object=wrap}
+            end
+
+            -- adaptor ke kontrol tab
+            function fold:AddButton(o)   return attach(tab:CreateButton(o)) end
+            function fold:AddToggle(o)   return attach(tab:CreateToggle(o)) end
+            function fold:AddInput(o)    return attach(tab:CreateInput(o)) end
+            function fold:AddLabel(t)    return attach(tab:CreateLabel(t)) end
+            function fold:AddSlider(o)   return attach(tab:CreateSlider(o)) end
+
+            -- DROPDOWN POPUP (search + highlight)
+            function fold:AddDropdownPopup(o)
+                o=o or {}
+                local flag = o.Flag
+                local opts = o.Options or {}
+
+                local saved = flag and loadFlag(flag)
+                local current
+                if o.MultiSelection then
+                    current = (type(saved)=="table" and saved) or (type(o.CurrentOption)=="table" and o.CurrentOption) or {}
+                else
+                    current = (saved ~= nil and saved) or (o.CurrentOption ~= nil and o.CurrentOption) or ""
+                end
+
+                local header = new("TextButton",{
+                    Size=UDim2.new(1,0,0,34), BackgroundColor3=THEME.card,
+                    TextColor3=THEME.text, Font=Enum.Font.Gotham, TextSize=14,
+                    AutoButtonColor=false, Text=tostring(o.Name or "Select"), Parent=body
+                })
+                new("UICorner",{CornerRadius=UDim.new(0,8)}, header)
+                header.MouseEnter:Connect(function() tween(header,{BackgroundColor3=THEME.hover},0.12) end)
+                header.MouseLeave:Connect(function() tween(header,{BackgroundColor3=THEME.card},0.12) end)
+
+                local function openPopup()
+                    local overlay = new("TextButton",{
+                        Text="", AutoButtonColor=false, Size=UDim2.fromScale(1,1),
+                        BackgroundColor3=Color3.new(0,0,0), BackgroundTransparency=0.35, ZIndex=1000, Active=true, Parent=TAB._ui._gui
+                    })
+                    overlay.MouseButton1Click:Connect(function() overlay:Destroy() end)
+
+                    local modal = new("Frame",{
+                        AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.fromScale(0.5,0.5),
+                        Size=UDim2.new(0, math.min(420, TAB._ui._main.AbsoluteSize.X-60), 0, 360),
+                        BackgroundColor3=THEME.bg2, ZIndex=1001, Parent=overlay
+                    })
+                    new("UICorner",{CornerRadius=UDim.new(0,12)}, modal)
+                    new("UIStroke",{Color=THEME.stroke, Thickness=1, Transparency=0.2}, modal)
+
+                    new("TextLabel",{
+                        BackgroundTransparency=1, Text = tostring(o.PopupTitle or o.Name or "Select"),
+                        TextColor3=THEME.text, Font=Enum.Font.GothamBold, TextSize=15,
+                        AnchorPoint=Vector2.new(0,0), Position=UDim2.new(0,14,0,10),
+                        Size=UDim2.new(1,-80,0,20), ZIndex=1002, Parent=modal
+                    })
+                    local closeB = new("TextButton",{Text="", BackgroundTransparency=1,
+                        AutoButtonColor=false, AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,-10,0,8),
+                        Size=UDim2.new(0,24,0,24), ZIndex=1002, Parent=modal})
+                    icon_X(closeB, THEME.textMuted, 2, UDim2.fromOffset(14,14))
+                    closeB.MouseButton1Click:Connect(function() overlay:Destroy() end)
+
+                    local search = new("TextBox",{
+                        PlaceholderText = "Input here...",
+                        ClearTextOnFocus = false, Text = "",
+                        Size = UDim2.new(1,-20,0,28), Position = UDim2.new(0,10,0,38),
+                        BackgroundColor3 = THEME.card, TextColor3 = THEME.text,
+                        Font=Enum.Font.Gotham, TextSize=14, ZIndex=1002, Parent=modal
+                    })
+                    new("UICorner",{CornerRadius=UDim.new(0,6)}, search)
+
+                    local listF = new("ScrollingFrame",{
+                        Size = UDim2.new(1,-20,1,-(38+36+12)), Position = UDim2.new(0,10,0,38+36),
+                        BackgroundTransparency=1, CanvasSize=UDim2.new(0,0,0,0), ScrollBarThickness=6,
+                        ZIndex=1002, Parent=modal
+                    })
+                    local ll = new("UIListLayout",{Padding=UDim.new(0,8)}, listF)
+                    ll:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                        listF.CanvasSize = UDim2.new(0,0,0, ll.AbsoluteContentSize.Y + 8)
+                    end)
+
+                    local selectedSet = {}
+                    local function loadCurrent()
+                        selectedSet = {}
+                        if o.MultiSelection then
+                            for _,v in ipairs(type(current)=="table" and current or {}) do selectedSet[tostring(v)]=true end
+                        else
+                            if current ~= nil then selectedSet[tostring(current)] = true end
+                        end
+                    end
+                    loadCurrent()
+                    local function normalized(str) return tostring(str or ""):lower() end
+
+                    local function paintSelected(btn, on)
+                        local grad = btn:FindFirstChildOfClass("UIGradient")
+                        if on then
+                            btn.TextColor3 = THEME.text
+                            btn.BackgroundColor3 = THEME.accent
+                            if not grad then
+                                grad = new("UIGradient",{Rotation=90, Transparency=NumberSequence.new(0),
+                                    Color = ColorSequence.new({
+                                        ColorSequenceKeypoint.new(0.0, THEME.gradA),
+                                        ColorSequenceKeypoint.new(0.5, THEME.accent),
+                                        ColorSequenceKeypoint.new(1.0, THEME.gradB),
+                                    })
+                                }, btn)
+                            end
+                            grad.Enabled = true
+                        else
+                            btn.TextColor3 = THEME.text
+                            btn.BackgroundColor3 = THEME.card
+                            if grad then grad.Enabled=false end
+                        end
+                    end
+
+                    local function rebuild()
+                        for _,c in ipairs(listF:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+                        local q = normalized(search.Text)
+                        for _,choice in ipairs(opts) do
+                            local s = normalized(choice)
+                            if q=="" or s:find(q,1,true) then
+                                local b = new("TextButton",{
+                                    Size=UDim2.new(1,0,0,34), BackgroundColor3 = THEME.card,
+                                    TextColor3 = THEME.text, Font=Enum.Font.Gotham, TextSize=14,
+                                    AutoButtonColor=false, Text=tostring(choice), ZIndex=1002, Parent=listF
+                                })
+                                new("UICorner",{CornerRadius=UDim.new(0,8)}, b)
+
+                                local sel = selectedSet[tostring(choice)] == true
+                                paintSelected(b, sel)
+
+                                b.MouseEnter:Connect(function() if not sel then tween(b,{BackgroundColor3=THEME.hover},0.12) end end)
+                                b.MouseLeave:Connect(function() if not sel then tween(b,{BackgroundColor3=THEME.card},0.12) end end)
+                                b.MouseButton1Click:Connect(function()
+                                    if o.MultiSelection then
+                                        sel = not sel
+                                        if sel then selectedSet[tostring(choice)]=true else selectedSet[tostring(choice)]=nil end
+                                        paintSelected(b, sel)
+                                        local res = {}
+                                        for _,ch in ipairs(opts) do if selectedSet[tostring(ch)] then table.insert(res, ch) end end
+                                        current = res
+                                        if flag then saveFlag(flag, current) scheduleFlush() end
+                                        if o.Callback then pcall(o.Callback, res) end
+                                    else
+                                        for _,c2 in ipairs(listF:GetChildren()) do
+                                            if c2:IsA("TextButton") and c2 ~= b then paintSelected(c2,false) end
+                                        end
+                                        sel = true; current = choice; paintSelected(b, true)
+                                        if flag then saveFlag(flag, current) scheduleFlush() end
+                                        if o.Callback then pcall(o.Callback, choice) end
+                                        overlay:Destroy()
+                                    end
+                                end)
+                            end
+                        end
+                    end
+
+                    search:GetPropertyChangedSignal("Text"):Connect(rebuild)
+                    rebuild()
+                end
+
+                header.MouseButton1Click:Connect(openPopup)
+
+                local api = {
+                    SetOptions = function(_, arr) opts = arr or {}; end,
+                    Set = function(_, v) current = v; if flag then saveFlag(flag, v) scheduleFlush() end end,
+                    Get = function() return current end,
+                    Object = header
+                }
+                return attach(api)
+            end
+
+            function fold:AddSubFold(o)
+                local sub = tab:CreateFold(o or {})
+                if sub and sub._root then sub._root.Parent = body end
+                resize(); return sub
+            end
+
+            function fold:_attach(inst) inst.Parent = body; resize() end
+
+            -- track last fold at tab level
+            self._lastFold = fold
+            return fold
+        end
+
+        -- ===================== Tab-level helpers (alias & passthrough) =====================
+
+        local function _titleOf(x, fallback)
+            if type(x) == "table" then return x.Title or x.Name or x[1] or fallback end
+            return tostring(x or fallback)
+        end
+
+        function tab:CrateFold(x) return self:CreateFold({ Title = _titleOf(x, "Fold") }) end
+
+        function tab:CreateSection(x)
+            local t = _titleOf(x, "Section")
+            local f = self._lastFold
+            if not f or not f.AddSection then
+                f = self:CreateFold({ Title = "Section" })
+                self._lastFold = f
+            end
+            return f:AddSection(t)
+        end
+
+        local function _ensureFold(selfTab)
+            if not selfTab._lastFold then selfTab._lastFold = selfTab:CreateFold({ Title = "Section" }) end
+            return selfTab._lastFold
+        end
+
+        function tab:AddToggle(o)         return _ensureFold(self):AddToggle(o) end
+        function tab:AddButton(o)         return _ensureFold(self):AddButton(o) end
+        function tab:AddInput(o)          return _ensureFold(self):AddInput(o) end
+        function tab:AddLabel(t)          return _ensureFold(self):AddLabel(t) end
+        function tab:AddParagraph(o)      return _ensureFold(self):AddParagraph(o) end
+        function tab:AddDivider()         return _ensureFold(self):AddDivider() end
+        function tab:AddSpacer(px)        return _ensureFold(self):AddSpacer(px) end
+        function tab:AddDropdownPopup(o)  return _ensureFold(self):AddDropdownPopup(o) end
+        function tab:AddSlider(o)         return _ensureFold(self):AddSlider(o) end
+        function tab:AddSubFold(o)
+            local parent = _ensureFold(self)
+            local sub = parent:AddSubFold(o)
+            self._lastFold = sub
+            return sub
+        end
+        -- ===============================================================================
+
+        return tab
+    end
+
+    return self
+end
+
+return IkanTongkol
