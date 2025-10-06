@@ -1,13 +1,10 @@
 --[[
-  TongkolUI (OceanFresh) — cleaned & modular (full version)
-  Notes:
-  - Dropdown single-selection: manual close (no auto-close) + refresh highlight via rebuild()
-  - Slider: event connections bound to janitor-like binder to avoid leaks
-  - Section body uses LayoutOrder so controls follow creation order
-  - Input has default placeholder "input here"
-  - Dropdown summary (multi): show first 3 selections, then " …" if more
-  - Dropdown value label truncates with ellipsis and clips
-  - Dropdown hover color doesn’t override selected state (no flicker)
+  TongkolUI (OceanFresh) — gui2 PATCHED
+  - Stable selected colors: solid accent by default (no flicker). Toggle via USE_SOLID_SELECTED flag.
+  - Hover never overrides selected state.
+  - Multi-dropdown summary: show first 3 then " …" if more.
+  - Input default placeholder: "input here".
+  - Section body uses LayoutOrder so controls follow creation order.
 ]]
 
 local Players = game:GetService("Players")
@@ -666,6 +663,9 @@ createTab = function(self, opt)
           listF.CanvasSize = UDim2.new(0, 0, 0, ll.AbsoluteContentSize.Y + 8)
         end)
 
+        -- === Selected style: choose solid or gradient ===
+        local USE_SOLID_SELECTED = true -- set false to use gradient
+
         local selectedSet = {}
         if multi then
           for _, v in ipairs(type(current) == "table" and current or {}) do
@@ -677,15 +677,25 @@ createTab = function(self, opt)
         local function paintSelected(bg, cap, on)
           local grad = bg:FindFirstChild("SelGrad")
           if on then
-            bg.BackgroundColor3 = T.accent
-            if not grad then
-              grad = New("UIGradient", { Name = "SelGrad", Rotation = 90, Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0.0, T.gradA),
-                ColorSequenceKeypoint.new(0.5, T.accent),
-                ColorSequenceKeypoint.new(1.0, T.gradB),
-              }) }, bg)
+            if USE_SOLID_SELECTED then
+              if grad then grad.Enabled = false end
+              bg.BackgroundColor3 = T.accent
+            else
+              if not grad then
+                grad = New("UIGradient", {
+                  Name = "SelGrad",
+                  Rotation = 90,
+                  Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0.0, T.gradA),
+                    ColorSequenceKeypoint.new(0.5, T.accent),
+                    ColorSequenceKeypoint.new(1.0, T.gradB),
+                  })
+                }, bg)
+              end
+              grad.Enabled = true
+              bg.BackgroundColor3 = T.accent
             end
-            grad.Enabled = true; cap.TextColor3 = T.text
+            cap.TextColor3 = T.text
           else
             if grad then grad.Enabled = false end
             bg.BackgroundColor3 = T.section; cap.TextColor3 = T.text
@@ -709,18 +719,12 @@ createTab = function(self, opt)
               paintSelected(bg, cap, sel)
 
               b.MouseEnter:Connect(function()
-                if sel then
-                  paintSelected(bg, cap, true)
-                else
-                  Tw(bg, { BackgroundColor3 = T.ctrlHover }, 0.10)
-                end
+                if sel then return end
+                Tw(bg, { BackgroundColor3 = T.ctrlHover }, 0.10)
               end)
               b.MouseLeave:Connect(function()
-                if sel then
-                  paintSelected(bg, cap, true)
-                else
-                  Tw(bg, { BackgroundColor3 = T.section }, 0.10)
-                end
+                if sel then return end
+                Tw(bg, { BackgroundColor3 = T.section }, 0.10)
               end)
               b.Activated:Connect(function()
                 if multi then
