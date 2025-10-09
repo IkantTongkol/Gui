@@ -1,5 +1,5 @@
 -- =============================
--- UI Loader (Test3)
+-- UI Loader3 (Test3)
 -- =============================
 local Players   = game:GetService("Players")
 local LP        = Players.LocalPlayer
@@ -86,7 +86,6 @@ local function shuffle(t)
         t[i], t[j] = t[j], t[i]
     end
 end
-
 local function partCFrame(inst)
     if inst:IsA("BasePart") then return inst.CFrame end
     if inst:IsA("Model") then
@@ -94,7 +93,6 @@ local function partCFrame(inst)
     end
     return CFrame.new()
 end
-
 local function setToggleState(toggle, state)
     if not toggle then return end
     pcall(function()
@@ -104,7 +102,6 @@ local function setToggleState(toggle, state)
         elseif toggle.Toggle and toggle.State ~= state then toggle:Toggle() end
     end)
 end
-
 local function updateDropdown(drop, names)
     if drop.Refresh     and pcall(function() drop:Refresh(names, true) end) then return end
     if drop.SetOptions  and pcall(function() drop:SetOptions(names) end)    then return end
@@ -118,29 +115,16 @@ local function updateDropdown(drop, names)
     end
     drop.Options = names
 end
-
--- helper set dropdown current selection (aman ke berbagai lib)
-local function setDropdownSelection(drop, values)
-    if not drop then return end
-    if drop.Set then drop:Set(values)
-    elseif drop.SetValue then drop:SetValue(values)
-    elseif drop.SetOption then drop:SetOption(values)
-    elseif drop.Refresh then drop:Refresh(values, true)
-    end
-end
-
 local function myPlayerFolder()
     local wp = workspace:FindFirstChild("Players")
     return wp and wp:FindFirstChild(LP.Name) or nil
 end
-
 local function safeName(inst)
     local raw = (typeof(inst)=="Instance" and inst.GetAttribute and inst:GetAttribute("ItemName"))
                 or (typeof(inst)=="Instance" and inst.Name)
                 or tostring(inst)
     return tostring(raw):gsub("^%b[]%s*", "")
 end
-
 local function equipTool(tool)
     if not tool or not tool.Parent then return false end
     local char = LP.Character or LP.CharacterAdded:Wait()
@@ -153,23 +137,6 @@ local function equipTool(tool)
     until os.clock()>deadline
     return tool.Parent==char
 end
-
-local function isFavorited(inst)
-    if typeof(inst) ~= "Instance" or not inst.GetAttribute then return false end
-    local ok, v = pcall(inst.GetAttribute, inst, "Favorited")
-    return ok and v == true
-end
-
-local function ensureFav(id, inst)
-    if isFavorited(inst) then return end
-    pcall(function() FavoriteItemRemote:FireServer(id) end)
-end
-
-local function ensureUnfav(id, inst)
-    if not isFavorited(inst) then return end
-    pcall(function() FavoriteItemRemote:FireServer(id) end)
-end
-
 local function getToolByBaseName(base)
     if not base or #base==0 then return nil end
     base = tostring(base):lower()
@@ -186,6 +153,7 @@ local function getToolByBaseName(base)
     local ch = LP.Character
     return pick(ch) or pick(LP:FindFirstChild("Backpack")) or pick(myPlayerFolder())
 end
+local function vec3(x,y,z) if vector and vector.create then return vector.create(x,y,z) end return Vector3.new(x,y,z) end
 
 -- =============================
 -- Planting
@@ -201,7 +169,6 @@ local function findMyPlot()
         if p:GetAttribute("Owner") == LP.Name then return p end
     end
 end
-
 local function collectGrassTiles(plot)
     local tiles = {}
     if not plot then return tiles end
@@ -219,7 +186,6 @@ local function collectGrassTiles(plot)
     end
     return tiles
 end
-
 local function isTileFree(tile)
     if tile:GetAttribute("Occupied") == true then return false end
     if tile:FindFirstChild("Plant") or tile:FindFirstChild("Crop") then return false end
@@ -258,12 +224,8 @@ local function scanBackpackSeeds()
     return byType
 end
 
-local function getWorkspacePlayerFolder()
-    return myPlayerFolder()
-end
-
 local function waitSeedInWorkspaceByID(id, plantName, timeout)
-    local pf = getWorkspacePlayerFolder()
+    local pf = myPlayerFolder()
     if not pf then return false end
     local deadline = os.clock() + (timeout or 2)
     repeat
@@ -307,7 +269,7 @@ local function equipSeedIntoWorkspace(stack)
 
     if waitSeedInWorkspaceByID(id, plantName, 2) then return true end
 
-    local pf = getWorkspacePlayerFolder()
+    local pf = myPlayerFolder()
     if pf and inst and inst.Parent and not inst:IsDescendantOf(pf) then
         pcall(function() inst.Parent = pf end)
         if waitSeedInWorkspaceByID(id, plantName, 1) then return true end
@@ -344,7 +306,6 @@ local function getAllSeedNamesFull()
     table.sort(list)
     return list
 end
-
 local function buySeedOnce(fullSeedName)
     local ok = pcall(function()
         BuyItemRemote:FireServer(fullSeedName)
@@ -352,7 +313,6 @@ local function buySeedOnce(fullSeedName)
     if not ok then warn("[AutoPlant] BuyItem gagal:", fullSeedName) end
     return ok
 end
-
 local function getAllGearNames()
     local list = {}
     local ok, gearStocks = pcall(function()
@@ -367,7 +327,6 @@ local function getAllGearNames()
     table.sort(list)
     return list
 end
-
 local function buyGearOnce(gearName)
     local ok = pcall(function()
         BuyGearRemote:FireServer(gearName)
@@ -405,7 +364,6 @@ local ddSeeds = tabPlant:Dropdown({
         end
     end
 })
-
 local function refreshSeeds()
     ownedSeeds = scanBackpackSeeds()
     local names = {}
@@ -414,15 +372,12 @@ local function refreshSeeds()
     updateDropdown(ddSeeds, names)
     notify("Seed List", ("%d jenis ditemukan"):format(#names), 1.2)
 end
-
 tabPlant:Button({ Name = "Refresh Seed (sekali)", Callback = refreshSeeds })
-
 tabPlant:Toggle({
     Name = "Only Free Tiles",
     Default = true,
     Callback = function(v) onlyFree = v end
 })
-
 local function getEmptyTiles(plot)
     local tiles = collectGrassTiles(plot)
     if onlyFree then
@@ -505,9 +460,11 @@ startToggle = tabPlant:Toggle({
     end
 })
 
+-- =============================
+-- Auto Move Plants (trigger boss/rarity)
+-- =============================
 tabPlant:CreateSectionFold({ Title = "Auto Move Plants" })
 
--- UI: trigger rarities + boss
 local AM_TRIGGER_OPTS = { "Godly", "Secret", "Limited", "Boss" }
 local amFilter = { godly=true, secret=true, limited=true, boss=true }
 tabPlant:Dropdown({
@@ -538,7 +495,6 @@ tabPlant:Toggle({
     Callback = function(v) autoMove = v end
 })
 
--- Helpers khusus Auto Move
 local function getRowModel(plot, rowNo)
     local rows = plot and plot:FindFirstChild("Rows")
     if not rows then return nil end
@@ -567,8 +523,6 @@ local function getMyPlotIndex()
     local p = findMyPlot()
     return p and tonumber(p.Name) or nil
 end
-
--- Plant readers
 local function getPlantID(plantInst)
     local ok, v = pcall(plantInst.GetAttribute, plantInst, "ID"); if ok and v then return tostring(v) end
     return nil
@@ -607,8 +561,11 @@ local function nearestTileToPos(plot, pos)
     end
     return best
 end
-
--- Backpack waiters
+local function equipShovel()
+    local shovel = getToolByBaseName("Shovel [Pick Up Plants]") or getToolByBaseName("Shovel")
+    if not shovel then return false end
+    return equipTool(shovel)
+end
 local function waitToolByID(id, timeout)
     local deadline = os.clock() + (timeout or 4)
     local bag = LP:WaitForChild("Backpack")
@@ -624,16 +581,9 @@ local function waitToolByID(id, timeout)
     return nil
 end
 local function plantNameFromTool(tool)
-    local n = safeName(tool) -- ex: "[4x] Eggplant"
-    n = n:gsub("^%[%s*%d+x%s*%]%s*", "") -- remove "[4x]"
+    local n = safeName(tool)
+    n = n:gsub("^%[%s*%d+x%s*%]%s*", "")
     return n
-end
-
--- Pickup & Place
-local function equipShovel()
-    local shovel = getToolByBaseName("Shovel [Pick Up Plants]") or getToolByBaseName("Shovel")
-    if not shovel then return false end
-    return equipTool(shovel)
 end
 local function pickupPlantByID(plantID)
     if not equipShovel() then return false, "no shovel" end
@@ -659,22 +609,16 @@ local function placePlantToolOnTile(tool, tile)
     return true
 end
 
--- Move orchestration
 local activeMoves = {}  -- [BrainrotID] = { {id, origTile, origPos, itemName} ... }
 local movingFlag  = false
-
 local function startMoveForRow(brID, rowModel)
     if movingFlag then return end
     movingFlag = true
     task.spawn(function()
         local plot = findMyPlot(); if not plot then movingFlag=false; return end
         local plantsFolder = plot:FindFirstChild("Plants"); if not plantsFolder then movingFlag=false; return end
-
-        -- target tiles (empty) dekat jalur
         local targets = getRowEmptyTilesSorted(rowModel)
         if #targets == 0 then notify("Move","Tidak ada tile kosong di row",1.0); movingFlag=false; return end
-
-        -- kumpulkan tanaman + damage
         local list = {}
         for _,p in ipairs(plantsFolder:GetChildren()) do
             local id = getPlantID(p)
@@ -685,21 +629,14 @@ local function startMoveForRow(brID, rowModel)
             end
         end
         table.sort(list, function(a,b) return (a.dmg or 0) > (b.dmg or 0) end)
-
-        -- ambil top AM_MAX
         local picked = {}
         local takeN = math.min(AM_MAX, #targets, #list)
         for i=1, takeN do picked[i] = { plant=list[i], target=targets[i] } end
-
         if #picked == 0 then movingFlag=false; return end
         activeMoves[brID] = {}
-
-        -- jalankan pickup -> place
         for _,it in ipairs(picked) do
             local plant, target = it.plant, it.target
-            -- hitung tile asal (nearest)
             local origTile = nearestTileToPos(plot, plant.pos)
-            -- pickup
             local ok, toolOrErr = pickupPlantByID(plant.id)
             local tool = ok and toolOrErr or nil
             if tool then
@@ -717,14 +654,12 @@ local function startMoveForRow(brID, rowModel)
         movingFlag = false
     end)
 end
-
 local function returnMovedPlants(brID)
     local batch = activeMoves[brID]; if not batch or #batch==0 then return end
     task.spawn(function()
         local plot = findMyPlot(); if not plot then activeMoves[brID]=nil; return end
         local plantsFolder = plot:FindFirstChild("Plants")
         for _,info in ipairs(batch) do
-            -- pastikan jadi tool dulu
             local instInWorld = nil
             if plantsFolder then
                 for _,p in ipairs(plantsFolder:GetChildren()) do
@@ -737,7 +672,6 @@ local function returnMovedPlants(brID)
                 if ok then pcall(function() RemoveItemRemote:FireServer(info.id) end) end
                 task.wait(0.25)
             end
-            -- cari toolnya
             local tool = waitToolByID(info.id, 6)
             if tool and info.origTile then
                 placePlantToolOnTile(tool, info.origTile)
@@ -748,7 +682,6 @@ local function returnMovedPlants(brID)
     end)
 end
 
--- Hook spawn & delete brainrot
 local SpawnBR = Remotes:FindFirstChild("SpawnBrainrot")
 local DeleteBR= Remotes:FindFirstChild("DeleteBrainrot")
 local myPlotIndex = getMyPlotIndex()
@@ -756,13 +689,11 @@ local myPlotIndex = getMyPlotIndex()
 if SpawnBR then
     SpawnBR.OnClientEvent:Connect(function(data)
         if not autoMove then return end
-        -- data expected: Model, Plot, RowNo, Mutations={IsBoss=bool, ...}
         if not data then return end
         local plotNo = tonumber(data.Plot)
         if myPlotIndex and plotNo ~= myPlotIndex then return end
 
         local isBoss = data.Mutations and data.Mutations.IsBoss == true
-        -- ambil rarity dari Stats (mungkin muncul setelah sedikit waktu)
         local rarity = nil
         if data.Model and data.Model:IsA("Model") then
             task.wait(0.05)
@@ -773,7 +704,6 @@ if SpawnBR then
                 rarity = data.Model:GetAttribute("Rarity")
             end
         end
-
         local triggerOK = false
         if isBoss and amFilter["boss"] then triggerOK = true end
         if rarity and amFilter[ tostring(rarity):lower() ] then triggerOK = true end
@@ -789,12 +719,13 @@ if SpawnBR then
 end
 if DeleteBR then
     DeleteBR.OnClientEvent:Connect(function(brID, info)
-        -- ketika BR ini mati -> kembalikan tanaman batch-nya
         returnMovedPlants(brID)
     end)
 end
 
--- Shop Seed / Gear
+-- =============================
+-- Shop
+-- =============================
 tabShop:CreateSectionFold({ Title = "Auto Buy Seed" })
 local shopSeedList = {}
 tabShop:Dropdown({
@@ -808,7 +739,6 @@ tabShop:Dropdown({
         else shopSeedList = {} end
     end
 })
-
 local autoBuyingSeed = false
 tabShop:Toggle({
     Name = "Auto Buy Seed",
@@ -844,7 +774,6 @@ tabShop:Dropdown({
         else shopGearList = {} end
     end
 })
-
 local autoBuyingGear = false
 tabShop:Toggle({
     Name = "Auto Buy Gear",
@@ -868,10 +797,9 @@ tabShop:Toggle({
 })
 
 tabShop:CreateSectionFold({ Title = "Auto sell" })
-local sellInterval = 1.0 -- Default 1 detik
+local sellInterval = 1.0
 local autoSellBrainrots = false
 local autoSellPlants = false
-
 tabShop:Input({
     Name = "Sell Interval (detik)",
     PlaceholderText = tostring(sellInterval),
@@ -886,14 +814,12 @@ tabShop:Input({
         end
     end
 })
-
 tabShop:Toggle({
     Name = "Auto Sell Brainrots",
     Default = false,
     Callback = function(state)
         autoSellBrainrots = state
         if not autoSellBrainrots then return end
-
         task.spawn(function()
             while autoSellBrainrots do
                 pcall(function() ItemSellRemote:FireServer() end)
@@ -902,14 +828,12 @@ tabShop:Toggle({
         end)
     end
 })
-
 tabShop:Toggle({
     Name = "Auto Sell Plants",
     Default = false,
     Callback = function(state)
         autoSellPlants = state
         if not autoSellPlants then return end
-
         task.spawn(function()
             while autoSellPlants do
                 pcall(function() ItemSellRemote:FireServer(nil, true) end)
@@ -920,18 +844,15 @@ tabShop:Toggle({
 })
 
 -- =============================
--- Utility: Equip Best Brainrots
+-- Utility
 -- =============================
 local autoEquipBR = false
 local brInterval  = 5
-
 tabUtil:CreateSectionFold({ Title = "Auto Equip Best Brainrots" })
 tabUtil:Input({
     Name = "Timer",
     PlaceholderText = tostring(brInterval),
     NumbersOnly = true,
-    OnEnter = false,
-    RemoveTextAfterFocusLost = false,
     Callback = function(txt)
         local v = tonumber(txt)
         if v and v >= 0.5 then
@@ -942,7 +863,6 @@ tabUtil:Input({
         end
     end
 })
-
 tabUtil:Toggle({
     Name = "Auto Equip Best Brainrots",
     Default = false,
@@ -958,21 +878,15 @@ tabUtil:Toggle({
     end
 })
 
--- =============================
--- Watering (Auto)
--- =============================
+-- Auto Water
 tabUtil:CreateSectionFold({ Title = "Auto Water" })
 local Countdowns = workspace:WaitForChild("ScriptedMap"):WaitForChild("Countdowns")
-
-local waterDelay = 0.15       -- jeda per siram (detik)
+local waterDelay = 0.15
 local autoWater  = false
-
 tabUtil:Input({
     Name = "Jeda Siram (s)",
     PlaceholderText = tostring(waterDelay),
     NumbersOnly = true,
-    OnEnter = false,
-    RemoveTextAfterFocusLost = false,
     Callback = function(txt)
         local v = tonumber(txt)
         if v and v >= 0 then
@@ -983,8 +897,6 @@ tabUtil:Input({
         end
     end
 })
-
--- cari Water Bucket tanpa hardcode nama prefix [x###]
 local function getWaterBucket()
     local function isBucket(t)
         if not t:IsA("Tool") then return false end
@@ -999,29 +911,24 @@ local function getWaterBucket()
     if pf then for _, t in ipairs(pf:GetChildren()) do if isBucket(t) then return t end end end
     return nil
 end
-
 local function waterAt(pos)
     local tool = getWaterBucket()
     if not tool then return false end
-    -- pastikan dipegang sebelum UseItem
     if tool.Parent ~= (LP.Character or LP.CharacterAdded:Wait()) then
         equipTool(tool)
     end
-    local v3 = (vector and vector.create) and vector.create(pos.X, pos.Y, pos.Z) or Vector3.new(pos.X, pos.Y, pos.Z)
+    local v3 = vec3(pos.X, pos.Y, pos.Z)
     pcall(function()
         UseItemRemote:FireServer({ { Toggle = true, Tool = tool, Pos = v3 } })
     end)
     return true
 end
-
 local function runAutoWater()
     while autoWater do
-        -- Equip hanya kalau ada tanaman tumbuh
         local children = Countdowns:GetChildren()
         if #children > 0 then
             local tool = getWaterBucket()
             if tool then equipTool(tool) end
-
             for _, inst in ipairs(children) do
                 local pos =
                     (inst.CFrame and inst.CFrame.Position)
@@ -1029,14 +936,13 @@ local function runAutoWater()
                     or nil
                 if pos then
                     waterAt(pos)
-                    task.wait(waterDelay) -- jeda per siram (input user)
+                    task.wait(waterDelay)
                 end
             end
         end
         task.wait(0.1)
     end
 end
-
 tabUtil:Toggle({
     Name = "Auto Water",
     Default = false,
@@ -1059,7 +965,6 @@ local function isSeedName(name)
     if SEED_WHITELIST and SEED_WHITELIST[name:gsub("%s+Seed$","")] then return true end
     return false
 end
-
 local function collectGiftables()
     local out = {}
     local function push(inst)
@@ -1077,7 +982,6 @@ local function collectGiftables()
     if pf then for _, t in ipairs(pf:GetChildren()) do push(t) end end
     return out
 end
-
 local function giftTool(tool, targetUsername)
     return pcall(function()
         GiftItemRemote:FireServer({ Item = tool, ToGift = targetUsername })
@@ -1129,7 +1033,6 @@ local ddGift = tabPack:Dropdown({
         end
     end
 })
-
 local function _updateDrop(drop, opts)
     if updateDropdown then return updateDropdown(drop, opts) end
     if drop.Refresh and pcall(function() drop:Refresh(opts, true) end) then return end
@@ -1144,7 +1047,6 @@ local function _updateDrop(drop, opts)
     end
     drop.Options = opts
 end
-
 tabPack:Button({
     Name = "Refresh Giftables",
     Callback = function()
@@ -1159,7 +1061,6 @@ tabPack:Button({
 })
 
 tabPack:Paragraph("Select Player")
-
 do
     local opts, map = buildPlayerOptions()
     playerLabelMap = map
@@ -1179,7 +1080,6 @@ do
         end
     })
 end
-
 tabPack:Button({
     Name = "Refresh Players",
     Callback = function()
@@ -1189,7 +1089,6 @@ tabPack:Button({
         notify("Players", "Daftar player di-refresh", 1.0)
     end
 })
-
 local function ensureRecipient()
     if giftTargetUsername ~= "" then return true end
     local opts, map = buildPlayerOptions()
@@ -1204,7 +1103,6 @@ local function ensureRecipient()
     notify("Recipient", "Tidak ada pemain lain online", 1.2)
     return false
 end
-
 tabPack:Button({
     Name = "Gift Only 1",
     Callback = function()
@@ -1225,44 +1123,6 @@ tabPack:Button({
     end
 })
 
-local giftToggle
-local function runAutoGift()
-    while runningGift do
-        if not ensureRecipient() or not selectedGiftNames or #selectedGiftNames == 0 then
-            task.wait(0.6)
-        else
-            local inv = collectGiftables()
-            local nothing = true
-            for _, name in ipairs(selectedGiftNames) do
-                local bucket = inv[name]
-                if bucket and #bucket.tools > 0 then
-                    nothing = false
-                    local tool = bucket.tools[1]
-                    equipTool(tool)
-                    giftTool(tool, giftTargetUsername)
-                    task.wait(giftDelay)
-                end
-            end
-            if nothing then task.wait(0.6) end
-        end
-    end
-end
-
-giftToggle = tabPack:Toggle({
-    Name = "Auto Gift",
-    Default = false,
-    Callback = function(state)
-        runningGift = state
-        if runningGift then
-            task.spawn(function()
-                local ok, err = pcall(runAutoGift)
-                if not ok then warn("[AutoGift] error:", err) end
-                setToggleState(giftToggle, false)
-            end)
-        end
-    end
-})
-
 -- Auto Accept Gift
 tabPack:Paragraph("Auto Accept Gift")
 local autoAcceptGift = false
@@ -1271,7 +1131,6 @@ tabPack:Toggle({
     Default = autoAcceptGift,
     Callback = function(state) autoAcceptGift = state end
 })
-
 GiftItemRemote.OnClientEvent:Connect(function(payload)
     if not autoAcceptGift then return end
     if type(payload) ~= "table" or not payload.ID then return end
@@ -1285,21 +1144,17 @@ GiftItemRemote.OnClientEvent:Connect(function(payload)
     end)
 end)
 
+-- Spy Kills → Auto-Fav (brainrots)
 tabPack:CreateSectionFold({ Title = "Kills → Auto-Fav" })
-
 local autoSpy = false
 local statusLbl = tabPack:Label("Status: OFF")
-
--- Filter rarity
 local RARITY_OPTS = { "Rare","Epic","Legendary","Mythic","Godly","Secret","Limited", }
 local chosenRarity = {}
 local function selectAllRarity()
     chosenRarity = {}
     for _,r in ipairs(RARITY_OPTS) do chosenRarity[r:lower()] = true end
 end
-local function selectNoneRarity() chosenRarity = {} end
 selectAllRarity()
-
 tabPack:Dropdown({
     Name = "Rarity Filter (Multi)",
     Options = RARITY_OPTS,
@@ -1314,7 +1169,6 @@ tabPack:Dropdown({
         end
     end
 })
-
 tabPack:Toggle({
     Name = "Spy Kills → Auto-Fav",
     Default = false,
@@ -1325,19 +1179,16 @@ tabPack:Toggle({
     end
 })
 
--- ====== Util baca atribut ======
 local function stripBrackets(s)
     local out = tostring(s or ""); local prev
     repeat prev = out; out = out:gsub("^%b[]%s*", "") until out==prev
     return out
 end
-
 local function getCoreNode(tool)
     if not (tool and tool:IsA("Tool")) then return nil end
     local base = stripBrackets(tool.Name)
     return tool:FindFirstChild(base) or tool:FindFirstChild(safeName(tool))
 end
-
 local function findAttrDeep(tool, key)
     local function read(inst)
         if inst and inst.GetAttribute then
@@ -1353,15 +1204,9 @@ local function findAttrDeep(tool, key)
     end
     return nil
 end
+local function getID(tool)    local v = findAttrDeep(tool, "ID"); return v and tostring(v) or nil end
+local function getRarity(tool) local v = findAttrDeep(tool, "Rarity"); return v and tostring(v) or nil end
 
-local function getID(tool)
-    local v = findAttrDeep(tool, "ID"); return v and tostring(v) or nil
-end
-local function getRarity(tool)
-    local v = findAttrDeep(tool, "Rarity"); return v and tostring(v) or nil
-end
-
--- ====== Deteksi Brainrot ======
 local BrainrotNames
 local function buildBrainrotSetOnce()
     if BrainrotNames ~= nil then return end
@@ -1372,7 +1217,6 @@ local function buildBrainrotSetOnce()
     end
 end
 buildBrainrotSetOnce()
-
 local function isBrainrotTool(tool)
     if not (tool and tool:IsA("Tool")) then return false end
     local nm = safeName(tool):lower()
@@ -1383,72 +1227,42 @@ local function isBrainrotTool(tool)
     if findAttrDeep(tool,"Brainrot")==true then return true end
     return false
 end
-
--- ====== Favorit aman ======
 local FavCache = {}
-local function isFavoritedTool(tool) return findAttrDeep(tool,"Favorited") == true end
+local function isFavorited(tool) return findAttrDeep(tool,"Favorited") == true end
 local function favoriteByID(id, tool)
     if not id then return false end
-    if FavCache[id] or isFavoritedTool(tool) then FavCache[id]=true; return true end
+    if FavCache[id] or isFavorited(tool) then FavCache[id]=true; return true end
     if FavoriteItemRemote then
-        pcall(function() FavoriteItemRemote:FireServer(id) end)
-        task.wait(0.08)
-        if not isFavoritedTool(tool) then
-            pcall(function() FavoriteItemRemote:FireServer({ID=id}) end)
-            task.wait(0.08)
-        end
-        if not isFavoritedTool(tool) and tool then
-            pcall(function() FavoriteItemRemote:FireServer({ID=id, Instance=tool}) end)
-            task.wait(0.08)
-        end
+        pcall(function() FavoriteItemRemote:FireServer(id) end); task.wait(0.08)
+        if not isFavorited(tool) then pcall(function() FavoriteItemRemote:FireServer({ID=id}) end); task.wait(0.08) end
+        if not isFavorited(tool) and tool then pcall(function() FavoriteItemRemote:FireServer({ID=id, Instance=tool}) end); task.wait(0.08) end
     end
-    if isFavoritedTool(tool) then FavCache[id]=true; return true end
+    if isFavorited(tool) then FavCache[id]=true; return true end
     return false
 end
-
--- ====== Kill gating (ONLY kill) — window 10s, reset tiap kill ======
 local KILL_GRACE = 10.0
 local killActiveUntil = 0
-local function markKill()
-    killActiveUntil = math.max(killActiveUntil, os.clock() + KILL_GRACE)
-end
-
--- Server confirm kill
+local function markKill() killActiveUntil = math.max(killActiveUntil, os.clock() + KILL_GRACE) end
 local DeleteBrainrotRemote = Remotes:WaitForChild("DeleteBrainrot")
-DeleteBrainrotRemote.OnClientEvent:Connect(function(...)
-    if autoSpy then markKill() end
-end)
-
--- Jaga-jaga: model Brainrot mati/hilang
+DeleteBrainrotRemote.OnClientEvent:Connect(function(...) if autoSpy then markKill() end end)
 local BrainrotsFolder = workspace:WaitForChild("ScriptedMap"):WaitForChild("Brainrots")
 local function watchBRModel(m)
     if not (m and m:IsA("Model")) then return end
     local hum = m:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.Died:Connect(function()
-            if autoSpy then markKill() end
-        end)
-    end
-    m.AncestryChanged:Connect(function(_, parent)
-        if autoSpy and (not parent) then markKill() end
-    end)
+    if hum then hum.Died:Connect(function() if autoSpy then markKill() end end) end
+    m.AncestryChanged:Connect(function(_, parent) if autoSpy and (not parent) then markKill() end end)
 end
 for _,m in ipairs(BrainrotsFolder:GetChildren()) do watchBRModel(m) end
 BrainrotsFolder.ChildAdded:Connect(watchBRModel)
 
--- ====== Proses loot masuk (hanya dalam window kill aktif) ======
 local function processNewContainer(node)
     if not autoSpy then return end
-    if os.clock() > killActiveUntil then return end -- inti "hanya kill" (≤10s setelah kill)
-
-    -- ambil Tool
+    if os.clock() > killActiveUntil then return end
     local tool = node
     if not (tool and tool:IsA("Tool")) then
         for _,d in ipairs(node:GetDescendants()) do if d:IsA("Tool") then tool = d; break end end
     end
     if not (tool and tool:IsA("Tool")) then return end
-
-    -- tunggu atribut ID/Rarity muncul
     local deadline = os.clock() + 8
     local id, rarity
     repeat
@@ -1457,21 +1271,14 @@ local function processNewContainer(node)
         if id and rarity then break end
         task.wait(0.15)
     until os.clock() > deadline
-
-    -- filter brainrot + rarity
     if not isBrainrotTool(tool) then return end
     if rarity and (next(chosenRarity) ~= nil) and not chosenRarity[rarity:lower()] then return end
-
     favoriteByID(id, tool)
 end
-
--- Hook kontainer umum untuk loot
 LP:WaitForChild("Backpack").ChildAdded:Connect(processNewContainer)
 local function hookChar(c) if c then c.ChildAdded:Connect(processNewContainer) end end
 hookChar(LP.Character or LP.CharacterAdded:Wait())
 LP.CharacterAdded:Connect(hookChar)
-
--- Player folder (fallback cari beberapa kandidat umum)
 local function myPlayerFolderSafe()
     local name = LP.Name
     local cand = {
@@ -1486,35 +1293,31 @@ local pf = (rawget(_G,"myPlayerFolder") and _G.myPlayerFolder()) or myPlayerFold
 if pf then pf.ChildAdded:Connect(processNewContainer) end
 
 -- =============================
--- COMBAT / COMBO (taruh di tabCombat)
+-- COMBAT / COMBO (tabCombat)
 -- =============================
 local function norm(s) return (tostring(s or "")):lower() end
 
 -- Rarity & state
 local ALL_RARITIES = { "Rare","Epic","Mythic","Legendary","Limited","Secret","Godly" }
 local CMB_STATE = {
-    -- filter rarity bersama
-    allowedRarity = { godly=true, secret=true, limited=true },
-
+    allowedRarity   = { godly=true, secret=true, limited=true }, -- filter shared
     -- Toggle 1: Auto TP + Hit
-    autoTP_enabled   = false,
-    yOffset          = 0,
-    stickYOffset     = 0,
-    lockFreeze       = true,
-    bufferDelay      = 0.12,
-    hitInterval      = 0.20,
-    autoEquipBat     = true,
-
+    autoTP_enabled  = false,
+    yOffset         = 0,
+    stickYOffset    = 0,
+    lockFreeze      = true,
+    bufferDelay     = 0.12,
+    hitInterval     = 0.20,
+    autoEquipBat    = true,
     -- Toggle 2: Auto Hit Gear (single)
-    gearFire_enabled = false,
-    gearChoice       = "Banana Gun", -- "Frost Grenade" | "Banana Gun" | "Carrot Launcher" | "Frost Blower"
-
-    -- Toggle 3: Combo Gear (loop)
-    combo_enabled    = false,
-    comboPeriod      = 2.0,
+    gearFire_enabled= false,
+    gearChoice      = "Banana Gun", -- Frost Grenade | Banana Gun | Carrot Launcher | Frost Blower
+    -- Toggle 3: Combo Gear
+    combo_enabled   = false,
+    comboPeriod     = 2.0,
 }
 
--- ========== brainrot rarity (model) ==========
+-- brainrot rarity (model)
 local _brWarned = {}
 local function cmbGetBRName(model)
     local keys = {"Brainrot","BrainRot","brainrot","Name","Title"}
@@ -1538,7 +1341,7 @@ local function cmbIsAllowed(r)
     return CMB_STATE.allowedRarity[r] == true
 end
 
--- ========== TP + stick ==========
+-- TP + stick
 local HRP = (LP.Character or LP.CharacterAdded:Wait()):WaitForChild("HumanoidRootPart", 15)
 local Hum = (LP.Character or LP.CharacterAdded:Wait()):WaitForChild("Humanoid", 15)
 LP.CharacterAdded:Connect(function(ch)
@@ -1547,7 +1350,6 @@ LP.CharacterAdded:Connect(function(ch)
         Hum = ch:WaitForChild("Humanoid", 15)
     end)
 end)
-
 local stick = { cons = {}, model=nil, id=nil }
 local DEFAULT_WALKSPEED, DEFAULT_JUMPPOWER, DEFAULT_JUMPHEIGHT = 16, 50, 7.2
 local function cmbUnfreeze()
@@ -1596,14 +1398,11 @@ end
 local function cmbAttachStick(m, id)
     cmbDetachStick()
     if not (HRP and m and m.PrimaryPart) then return end
-
     local a0 = HRP:FindFirstChild("CMB_Att0") or Instance.new("Attachment")
     a0.Name, a0.Parent = "CMB_Att0", HRP
-
     local a1 = m.PrimaryPart:FindFirstChild("CMB_Att1") or Instance.new("Attachment")
     a1.Name, a1.Parent = "CMB_Att1", m.PrimaryPart
     a1.Position = Vector3.new(0, (CMB_STATE.stickYOffset or 0), 0)
-
     local ap = Instance.new("AlignPosition")
     ap.Attachment0, ap.Attachment1 = a0, a1
     ap.RigidityEnabled = true
@@ -1611,19 +1410,17 @@ local function cmbAttachStick(m, id)
     ap.Responsiveness = 300
     ap.ApplyAtCenterOfMass = true
     ap.Parent = HRP
-
     local ao = Instance.new("AlignOrientation")
     ao.Attachment0, ao.Attachment1 = a0, a1
     ao.RigidityEnabled = true
     ao.MaxTorque = math.huge
     ao.Responsiveness = 300
     ao.Parent = HRP
-
     stick.cons, stick.model, stick.id = {a0,a1,ap,ao}, m, id
     cmbFreeze()
 end
 
--- ========== tool helpers ==========
+-- tool helpers / equip exclusive
 local function moveToolToBackpack(tool)
     if not (tool and tool:IsA("Tool")) then return end
     local bp = LP:FindFirstChild("Backpack")
@@ -1644,7 +1441,6 @@ local function ensureBlowerOff()
     local t = findToolByPartials({"frost","blow"})
     if t then pcall(function() UseItemRemote:FireServer({ Tool = t, Toggle = false }) end) end
 end
--- EXCLUSIVE equip aman register
 local function cmbStashAllExcept(char, bp, keep)
     if not char or not bp then return end
     for _,t in ipairs(char:GetChildren()) do
@@ -1657,7 +1453,6 @@ local function ensureEquippedExclusive(tool, timeout)
     local bp   = LP:FindFirstChild("Backpack")
     ensureBlowerOff()
     cmbStashAllExcept(char, bp, tool)
-
     if tool.Parent ~= char then
         if EquipItemRemote then
             pcall(function() EquipItemRemote:FireServer(tool) end)
@@ -1665,12 +1460,11 @@ local function ensureEquippedExclusive(tool, timeout)
         end
         if tool.Parent ~= char and tool.Parent ~= nil then pcall(function() tool.Parent = char end) end
     end
-
     local t0, lim = os.clock(), (timeout or 1.0)
     while os.clock()-t0 < lim do
         local onlyThis = (tool.Parent == char)
         if onlyThis then
-            for _,t in ipairs(char:GetChildren()) do
+            for _, t in ipairs(char:GetChildren()) do
                 if t:IsA("Tool") and t ~= tool then onlyThis=false break end
             end
         end
@@ -1680,8 +1474,6 @@ local function ensureEquippedExclusive(tool, timeout)
     end
     return (tool.Parent == char)
 end
-
--- ========== auto-equip bat + hit ==========
 local function findBatInBackpack()
     local bp = LP:FindFirstChild("Backpack")
     if not bp then return nil end
@@ -1701,6 +1493,7 @@ local function cmbEquipBat()
     if char and tool.Parent == LP.Backpack then pcall(function() tool.Parent = char end) end
 end
 
+-- hit loop
 local hitToken = 0
 local function cmbVisualHit(model)
     if not (model and model.PrimaryPart) then return end
@@ -1728,14 +1521,13 @@ local function startHitLoop()
 end
 local function stopHitLoop() hitToken += 1 end
 
--- ========== active & selection ==========
-local ACTIVE = {}  -- [id] = model
+-- active & selection
+local ACTIVE = {}
 local CURRENT = { id=nil, model=nil, rarity=nil }
 local preferredRarity = nil
 local locked = false
 local buf, bufScheduled = {}, false
 local handled = {}
-
 local function setCurrent(id, m)
     CURRENT.id, CURRENT.model = id, m
     local r = cmbGetRarityModel(m)
@@ -1745,7 +1537,6 @@ end
 local function clearCurrent() CURRENT.id, CURRENT.model, CURRENT.rarity = nil,nil,nil end
 local function markHandled(id) handled[id] = true end
 local function isHandled(id) return handled[id]==true end
-
 local function pickSameRarity(rWanted)
     if not rWanted then return nil,nil end
     local char = LP.Character; local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1761,7 +1552,6 @@ local function pickSameRarity(rWanted)
     end
     return bestId, bestModel
 end
-
 local function chooseBestFromBuf()
     local cam = workspace.CurrentCamera
     local best, bestRank, bestDist = nil, -1, 1e9
@@ -1780,7 +1570,6 @@ local function chooseBestFromBuf()
     end
     return best
 end
-
 local function lockOn(pick)
     cmbEquipBat()
     cmbTPAbove(pick.model)
@@ -1789,7 +1578,6 @@ local function lockOn(pick)
     locked = true
     startHitLoop()
 end
-
 local function processBuf()
     bufScheduled = false
     if locked or not CMB_STATE.autoTP_enabled or #buf==0 then buf = {}; return end
@@ -1797,7 +1585,6 @@ local function processBuf()
     if not pick or not pick.model or not pick.model.Parent then return end
     task.defer(function() lockOn(pick) end)
 end
-
 local function enqueue(m, id)
     if isHandled(id) or locked or not CMB_STATE.autoTP_enabled then return end
     markHandled(id)
@@ -1807,7 +1594,6 @@ local function enqueue(m, id)
         task.delay(CMB_STATE.bufferDelay or 0.12, processBuf)
     end
 end
-
 local function relockFromWorld()
     if locked or not CMB_STATE.autoTP_enabled then return end
     local sid, sm = pickSameRarity(preferredRarity)
@@ -1825,15 +1611,13 @@ local function relockFromWorld()
     end
     if bestId and bestM then lockOn({id=bestId, model=bestM}) end
 end
-
-local function unlock(_reason)
+local function unlock()
     stopHitLoop()
     cmbDetachStick()
     locked = false
     relockFromWorld()
 end
 
--- ========== remote hooks ==========
 if SpawnBR then
     SpawnBR.OnClientEvent:Connect(function(payload)
         if not payload then return end
@@ -1865,8 +1649,6 @@ if DeleteBR then
         end
     end)
 end
-
--- seed ACTIVE dari world (jaga2)
 task.spawn(function()
     local sm = workspace:FindFirstChild("ScriptedMap", 15)
     local br = sm and sm:FindFirstChild("Brainrots", 15)
@@ -1887,14 +1669,12 @@ task.spawn(function()
     br.ChildRemoved:Connect(function(m)
         local id = m:GetAttribute("ID") or m.Name
         ACTIVE[id] = nil
-        if stick.model and m == stick.model then unlock("removed") end
+        if stick.model and m == stick.model then unlock() end
     end)
 end)
-
--- watchdog
 RunService.Stepped:Connect(function()
     if locked then
-        if not (stick.model and stick.model.Parent) then unlock("lost model") return end
+        if not (stick.model and stick.model.Parent) then unlock() return end
         local hasAP, hasAO = false, false
         for _,o in ipairs(stick.cons) do
             if typeof(o)=="Instance" and o.Parent then
@@ -1908,16 +1688,14 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- ========== target pos untuk gear ==========
+-- target pos untuk gear
 local function chooseTargetPos()
     local char = LP.Character or LP.CharacterAdded:Wait()
     local hrp  = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return Vector3.zero end
-
     local bestSame, bestSameDist
     local bestAllowed, bestAllowedDist
     local bestAny, bestAnyDist
-
     for _,m in pairs(ACTIVE) do
         if m and m.Parent and m.PrimaryPart then
             local pos = m.PrimaryPart.Position
@@ -1935,7 +1713,7 @@ local function chooseTargetPos()
     return bestSame or bestAllowed or bestAny or hrp.Position
 end
 
--- ========== Gear registry ==========
+-- Gear registry & helpers
 local REG = {
     ["Frost Grenade"]   = { keys={"frost","gren"}, time=0.50, kind="pulse" },
     ["Banana Gun"]      = { keys={"banana","gun"}, time=0.04, kind="pulse" },
@@ -1950,12 +1728,10 @@ end
 local function returnAllKnownTools()
     for _,entry in pairs(REG) do returnGearByEntry(entry) end
 end
-
--- panggil UseItem aman
 local lastUseAt = 0
 local function safeUse(payload)
-    if os.clock() - lastUseAt < 0.06 then task.wait(0.06) end
-    lastUseAt = os.clock()
+    if time() - lastUseAt < 0.06 then task.wait(0.06) end
+    lastUseAt = time()
     local ok = pcall(function() UseItemRemote:FireServer(payload) end)
     if ok then return true end
     ok = pcall(function() UseItemRemote:FireServer(unpack({payload})) end)
@@ -1964,7 +1740,7 @@ local function safeUse(payload)
     return ok
 end
 
--- ========== Toggle 2: Auto Hit Gear (single) ==========
+-- Toggle 2: Auto Hit Gear (single)
 local gearFireToken = 0
 local function stopGearFireLoop() gearFireToken += 1 end
 local function startGearFireLoop()
@@ -1999,12 +1775,11 @@ local function startGearFireLoop()
     end)
 end
 
--- ========== Toggle 3: Combo Gear (Frost×1 → Banana×4 → Carrot×2) ==========
+-- Toggle 3: Combo Gear (Frost×1 → Banana×4 → Carrot×2)
 local comboToken = 0
 local function runComboCycle()
     local char = LP.Character or LP.CharacterAdded:Wait()
     local bp   = LP:FindFirstChild("Backpack")
-
     -- Frost x1
     do
         local e = REG["Frost Grenade"]
@@ -2019,7 +1794,6 @@ local function runComboCycle()
             task.wait(0.03)
         end
     end
-
     -- Banana x4
     do
         local e = REG["Banana Gun"]
@@ -2036,7 +1810,6 @@ local function runComboCycle()
             task.wait(0.03)
         end
     end
-
     -- Carrot x2
     do
         local e = REG["Carrot Launcher"]
@@ -2054,7 +1827,7 @@ local function runComboCycle()
     end
 end
 
--- ========== GUI: tabCombat ==========
+-- GUI: tabCombat
 tabCombat:CreateSectionFold({ Title = "Rarity Filter (Shared)" })
 local cmbInit = {}
 for _,r in ipairs(ALL_RARITIES) do if CMB_STATE.allowedRarity[norm(r)] then cmbInit[#cmbInit+1]=r end end
@@ -2076,7 +1849,7 @@ tabCombat:Button({
     Name = "Preset: Godly + Secret (+Limited)",
     Callback = function()
         CMB_STATE.allowedRarity = { godly=true, secret=true, limited=true }
-        setDropdownSelection(ddR, {"Godly","Secret","Limited"})
+        ddR.Set(nil, {"Godly","Secret","Limited"})
     end
 })
 tabCombat:Button({
@@ -2085,16 +1858,14 @@ tabCombat:Button({
         local all = {}
         for _,r in ipairs(ALL_RARITIES) do all[norm(r)] = true end
         CMB_STATE.allowedRarity = all
-        local tmpAll = {}
-        for i,v in ipairs(ALL_RARITIES) do tmpAll[i]=v end
-        setDropdownSelection(ddR, tmpAll)
+        ddR.Set(nil, table.clone(ALL_RARITIES))
     end
 })
 tabCombat:Button({
     Name = "Clear (No Filter)",
     Callback = function()
         CMB_STATE.allowedRarity = {}
-        setDropdownSelection(ddR, {})
+        ddR.Set(nil, {})
     end
 })
 
@@ -2107,10 +1878,9 @@ tabCombat:Toggle({
         CMB_STATE.autoTP_enabled = on
         CMB_STATE.lockFreeze     = on
         CMB_STATE.autoEquipBat   = on
-
         if not on then
             buf, bufScheduled = {}, false
-            if locked then unlock("disabled") end
+            if locked then unlock() end
             stopHitLoop()
             cmbUnfreeze()
             local t = findToolByPartials(REG["Frost Blower"].keys)
@@ -2122,7 +1892,7 @@ tabCombat:Toggle({
     end
 })
 
--- Toggle 2: Auto Hit Gear (single) -- mutual exclusive dengan Combo
+-- Toggle 2: Auto Hit Gear (single)
 tabCombat:CreateSectionFold({ Title = "Auto Hit Gear (Single)" })
 local gearList = { "Frost Grenade","Banana Gun","Carrot Launcher","Frost Blower" }
 local ddGear = tabCombat:Dropdown({
@@ -2136,10 +1906,6 @@ tabCombat:Toggle({
     Name = "Enable Auto Hit Gear",
     Default = CMB_STATE.gearFire_enabled,
     Callback = function(on)
-        if on and CMB_STATE.combo_enabled then
-            CMB_STATE.combo_enabled = false
-            comboToken += 1 -- stop combo
-        end
         CMB_STATE.gearFire_enabled = on
         if on then
             startGearFireLoop()
@@ -2152,17 +1918,13 @@ tabCombat:Toggle({
     end
 })
 
--- Toggle 3: Combo Gear -- mutual exclusive dengan Single
+-- Toggle 3: Combo Gear
 tabCombat:CreateSectionFold({ Title = "Combo Gear (Frost×1 → Banana×4 → Carrot×2)" })
 tabCombat:Paragraph("Loop tiap ~2 detik. Target prioritas: rarity sama (target terakhir) → allowed → terdekat.")
 tabCombat:Toggle({
     Name = "Enable Combo",
     Default = CMB_STATE.combo_enabled,
     Callback = function(on)
-        if on and CMB_STATE.gearFire_enabled then
-            CMB_STATE.gearFire_enabled = false
-            stopGearFireLoop()
-        end
         CMB_STATE.combo_enabled = on
         if on then
             comboToken += 1; local my = comboToken
