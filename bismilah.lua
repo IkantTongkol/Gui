@@ -186,6 +186,718 @@ local function getToolByBaseName(base)
     local ch = LP.Character
     return pick(ch) or pick(LP:FindFirstChild("Backpack")) or pick(myPlayerFolder())
 end
+-- =============================
+-- COMBAT / COMBO (taruh di tabCombat)
+-- =============================
+local function norm(s) return (tostring(s or "")):lower() end
+
+-- Rarity & state
+local ALL_RARITIES = { "Rare","Epic","Mythic","Legendary","Limited","Secret","Godly" }
+local CMB_STATE = {
+    -- filter rarity bersama
+    allowedRarity = { godly=true, secret=true, limited=true },
+
+    -- Toggle 1: Auto TP + Hit
+    autoTP_enabled   = false,
+    yOffset          = 0,
+    stickYOffset     = 0,
+    lockFreeze       = true,
+    bufferDelay      = 0.12,
+    hitInterval      = 0.20,
+    autoEquipBat     = true,
+
+    -- Toggle 2: Auto Hit Gear (single)
+    gearFire_enabled = false,
+    gearChoice       = "Banana Gun", -- "Frost Grenade" | "Banana Gun" | "Carrot Launcher" | "Frost Blower"
+
+    -- Toggle 3: Combo Gear (loop)
+    combo_enabled    = false,
+    comboPeriod      = 2.0,
+}
+
+-- ========== brainrot rarity (model) ==========
+local _brWarned = {}
+local function cmbGetBRName(model)
+    local keys = {"Brainrot","BrainRot","brainrot","Name","Title"}
+    for _,k in ipairs(keys) do
+        local v = model:GetAttribute(k)
+        if type(v)=="string" and #v>0 then return v end
+    end
+    return model.Name
+end
+local function cmbGetRarityModel(model)
+    if not Util or not Util.GetBrainrotEntry then return nil end
+    local nm = cmbGetBRName(model)
+    local ok, entry = pcall(Util.GetBrainrotEntry, Util, nm)
+    if ok and entry and entry.Rarity then return entry.Rarity end
+    if not _brWarned[nm] then _brWarned[nm]=true warn("[COMBO] Rarity not found:", nm) end
+    return nil
+end
+local function cmbIsAllowed(r)
+    if not r then return false end
+    r = norm(r)
+    return CMB_STATE.allowedRarity[r] == true
+end
+
+-- ========== TP + stick ==========
+local HRP = (LP.Character or LP.CharacterAdded:Wait()):WaitForChild("HumanoidRootPart", 15)
+local Hum = (LP.Character or LP.CharacterAdded:Wait()):WaitForChild("Humanoid", 15)
+LP.CharacterAdded:Connect(function(ch)
+    task.defer(function()
+        HRP = ch:WaitForChild("HumanoidRootPart", 15)
+        Hum = ch:WaitForChild("Humanoid", 15)
+    end)
+end)
+
+local stick = { cons = {}, model=nil, id=nil }
+local DEFAULT_WALKSPEED, DEFAULT_JUMPPOWER, DEFAULT_JUMPHEIGHT = 16, 50, 7.2
+local function cmbUnfreeze()
+    if not Hum then return end
+    Hum.AutoRotate = true
+    Hum.PlatformStand = false
+    if Hum.UseJumpPower ~= nil then Hum.JumpPower = DEFAULT_JUMPPOWER else pcall(function() Hum.JumpHeight = DEFAULT_JUMPHEIGHT end) end
+    Hum.WalkSpeed = DEFAULT_WALKSPEED
+end
+local function cmbFreeze()
+    if not Hum then return end
+    Hum.AutoRotate = false
+    if CMB_STATE.lockFreeze then
+        if Hum.UseJumpPower ~= nil then Hum.JumpPower = 0 end
+        Hum.WalkSpeed = 0
+        Hum.PlatformStand = false
+    end
+end
+local function cmbDetachStick()
+    for _,o in ipairs(stick.cons) do
+        if typeof(o)=="Instance" and o.Destroy then pcall(function() o:Destroy() end) end
+    end
+    stick.cons, stick.model, stick.id = {}, nil, nil
+    cmbUnfreeze()
+end
+local function cmbWaitModelReady(m, t)
+    t = t or 5; local t0 = os.clock()
+    while os.clock()-t0 < t do
+        if m and m.Parent and m:IsDescendantOf(workspace) then
+            local ok = pcall(m.GetBoundingBox, m); if ok then return true end
+        end
+        task.wait(0.05)
+    end
+    return false
+end
+local function cmbTPAbove(m)
+    if not (m and HRP) then return end
+    if not cmbWaitModelReady(m, 5) then return end
+    local ok, cf, size = pcall(m.GetBoundingBox, m); if not ok then return end
+    local top = cf.Position + Vector3.new(0, size.Y + (CMB_STATE.yOffset or 0), 0)
+    HRP.AssemblyLinearVelocity = Vector3.zero
+    local cam = workspace.CurrentCamera
+    local look = cam and cam.CFrame.LookVector or Vector3.new(0,0,-1)
+    HRP.CFrame = CFrame.new(top, top + look)
+end
+local function cmbAttachStick(m, id)
+    cmbDetachStick()
+    if not (HRP and m and m.PrimaryPart) then return end
+
+    local a0 = HRP:FindFirstChild("CMB_Att0") or Instance.new("Attachment")
+    a0.Name, a0.Parent = "CMB_Att0", HRP
+
+    local a1 = m.PrimaryPart:FindFirstChild("CMB_Att1") or Instance.new("Attachment")
+    a1.Name, a1.Parent = "CMB_Att1", m.PrimaryPart
+    a1.Position = Vector3.new(0, (CMB_STATE.stickYOffset or 0), 0)
+
+    local ap = Instance.new("AlignPosition")
+    ap.Attachment0, ap.Attachment1 = a0, a1
+    ap.RigidityEnabled = true
+    ap.MaxForce = math.huge
+    ap.Responsiveness = 300
+    ap.ApplyAtCenterOfMass = true
+    ap.Parent = HRP
+
+    local ao = Instance.new("AlignOrientation")
+    ao.Attachment0, ao.Attachment1 = a0, a1
+    ao.RigidityEnabled = true
+    ao.MaxTorque = math.huge
+    ao.Responsiveness = 300
+    ao.Parent = HRP
+
+    stick.cons, stick.model, stick.id = {a0,a1,ap,ao}, m, id
+    cmbFreeze()
+end
+
+-- ========== tool helpers ==========
+local function moveToolToBackpack(tool)
+    if not (tool and tool:IsA("Tool")) then return end
+    local bp = LP:FindFirstChild("Backpack")
+    if bp and tool.Parent ~= bp then pcall(function() tool.Parent = bp end) end
+end
+local function findToolByPartials(partials)
+    local char, bp = LP.Character, LP:FindFirstChild("Backpack")
+    local function match(t)
+        local n = norm(t.Name)
+        for _,key in ipairs(partials) do if not n:find(key,1,true) then return false end end
+        return true
+    end
+    if char then for _,t in ipairs(char:GetChildren()) do if t:IsA("Tool") and match(t) then return t,"Character" end end end
+    if bp   then for _,t in ipairs(bp:GetChildren())   do if t:IsA("Tool") and match(t) then return t,"Backpack"  end end end
+    return nil
+end
+local function ensureBlowerOff()
+    local t = findToolByPartials({"frost","blow"})
+    if t then pcall(function() UseItemRemote:FireServer({ Tool = t, Toggle = false }) end) end
+end
+-- EXCLUSIVE equip aman register
+local function cmbStashAllExcept(char, bp, keep)
+    if not char or not bp then return end
+    for _,t in ipairs(char:GetChildren()) do
+        if t:IsA("Tool") and t ~= keep then pcall(function() t.Parent = bp end) end
+    end
+end
+local function ensureEquippedExclusive(tool, timeout)
+    if not tool then return false end
+    local char = LP.Character or LP.CharacterAdded:Wait()
+    local bp   = LP:FindFirstChild("Backpack")
+    ensureBlowerOff()
+    cmbStashAllExcept(char, bp, tool)
+
+    if tool.Parent ~= char then
+        if EquipItemRemote then
+            pcall(function() EquipItemRemote:FireServer(tool) end)
+            pcall(function() EquipItemRemote:FireServer(tool.Name) end)
+        end
+        if tool.Parent ~= char and tool.Parent ~= nil then pcall(function() tool.Parent = char end) end
+    end
+
+    local t0, lim = os.clock(), (timeout or 1.0)
+    while os.clock()-t0 < lim do
+        local onlyThis = (tool.Parent == char)
+        if onlyThis then
+            for _,t in ipairs(char:GetChildren()) do
+                if t:IsA("Tool") and t ~= tool then onlyThis=false break end
+            end
+        end
+        if onlyThis then return true end
+        cmbStashAllExcept(char, bp, tool)
+        task.wait(0.05)
+    end
+    return (tool.Parent == char)
+end
+
+-- ========== auto-equip bat + hit ==========
+local function findBatInBackpack()
+    local bp = LP:FindFirstChild("Backpack")
+    if not bp then return nil end
+    for _,tool in ipairs(bp:GetChildren()) do
+        if tool:IsA("Tool") and norm(tool.Name):find("bat") then return tool end
+    end
+    return nil
+end
+local function cmbEquipBat()
+    if not CMB_STATE.autoEquipBat then return end
+    local tool = findBatInBackpack(); if not tool then return end
+    if EquipItemRemote then
+        local ok = pcall(function() EquipItemRemote:FireServer(tool) end)
+        if not ok then pcall(function() EquipItemRemote:FireServer(tool.Name) end) end
+    end
+    local char = LP.Character
+    if char and tool.Parent == LP.Backpack then pcall(function() tool.Parent = char end) end
+end
+
+local hitToken = 0
+local function cmbVisualHit(model)
+    if not (model and model.PrimaryPart) then return end
+    local att = Instance.new("Attachment", model.PrimaryPart)
+    local pe = Instance.new("ParticleEmitter")
+    pe.Rate = 0; pe.Lifetime = NumberRange.new(0.2,0.35)
+    pe.Speed = NumberRange.new(6,10); pe.SpreadAngle = Vector2.new(60,60)
+    pe.Texture = "rbxassetid://243660364"
+    pe.Parent = att; pe:Emit(14)
+    Debris:AddItem(att,1)
+end
+local function startHitLoop()
+    if not WeaponAttack then return end
+    hitToken += 1; local my = hitToken
+    task.spawn(function()
+        while my == hitToken do
+            if stick.model and stick.model.Parent then
+                local id = stick.id or stick.model:GetAttribute("ID") or stick.model.Name
+                pcall(function() WeaponAttack:FireServer({ tostring(id) }) end)
+                cmbVisualHit(stick.model)
+            end
+            task.wait(CMB_STATE.hitInterval or 0.2)
+        end
+    end)
+end
+local function stopHitLoop() hitToken += 1 end
+
+-- ========== active & selection ==========
+local ACTIVE = {}  -- [id] = model
+local CURRENT = { id=nil, model=nil, rarity=nil }
+local preferredRarity = nil
+local locked = false
+local buf, bufScheduled = {}, false
+local handled = {}
+
+local function setCurrent(id, m)
+    CURRENT.id, CURRENT.model = id, m
+    local r = cmbGetRarityModel(m)
+    CURRENT.rarity = r and norm(r) or nil
+    preferredRarity = CURRENT.rarity
+end
+local function clearCurrent() CURRENT.id, CURRENT.model, CURRENT.rarity = nil,nil,nil end
+local function markHandled(id) handled[id] = true end
+local function isHandled(id) return handled[id]==true end
+
+local function pickSameRarity(rWanted)
+    if not rWanted then return nil,nil end
+    local char = LP.Character; local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local bestId, bestModel, bestDist = nil,nil,math.huge
+    for id,m in pairs(ACTIVE) do
+        if m and m.Parent and m.PrimaryPart then
+            local r = cmbGetRarityModel(m)
+            if r and norm(r)==rWanted then
+                local d = hrp and (m.PrimaryPart.Position-hrp.Position).Magnitude or 0
+                if d < bestDist then bestId, bestModel, bestDist = id, m, d end
+            end
+        end
+    end
+    return bestId, bestModel
+end
+
+local function chooseBestFromBuf()
+    local cam = workspace.CurrentCamera
+    local best, bestRank, bestDist = nil, -1, 1e9
+    for _,it in ipairs(buf) do
+        local m = it.model
+        if m and m.Parent then
+            local r = cmbGetRarityModel(m)
+            if cmbIsAllowed(r) then
+                local rank = ({rare=1, epic=2, mythic=3, legendary=4, limited=4, secret=5, godly=6})[norm(r)] or 0
+                local dist = 1e9
+                local ok, cf = pcall(m.GetBoundingBox, m)
+                if ok and cam then dist = (cf.Position - cam.CFrame.Position).Magnitude end
+                if rank > bestRank or (rank==bestRank and dist<bestDist) then best, bestRank, bestDist = it, rank, dist end
+            end
+        end
+    end
+    return best
+end
+
+local function lockOn(pick)
+    cmbEquipBat()
+    cmbTPAbove(pick.model)
+    cmbAttachStick(pick.model, pick.id)
+    setCurrent(pick.id, pick.model)
+    locked = true
+    startHitLoop()
+end
+
+local function processBuf()
+    bufScheduled = false
+    if locked or not CMB_STATE.autoTP_enabled or #buf==0 then buf = {}; return end
+    local pick = chooseBestFromBuf(); buf = {}
+    if not pick or not pick.model or not pick.model.Parent then return end
+    task.defer(function() lockOn(pick) end)
+end
+
+local function enqueue(m, id)
+    if isHandled(id) or locked or not CMB_STATE.autoTP_enabled then return end
+    markHandled(id)
+    table.insert(buf, {model=m, id=id})
+    if not bufScheduled then
+        bufScheduled = true
+        task.delay(CMB_STATE.bufferDelay or 0.12, processBuf)
+    end
+end
+
+local function relockFromWorld()
+    if locked or not CMB_STATE.autoTP_enabled then return end
+    local sid, sm = pickSameRarity(preferredRarity)
+    if sid and sm then lockOn({id=sid, model=sm}) return end
+    local char = LP.Character; local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local bestId, bestM, bestD
+    for id,m in pairs(ACTIVE) do
+        if m and m.Parent and m.PrimaryPart then
+            local r = cmbGetRarityModel(m)
+            if cmbIsAllowed(r) then
+                local d = hrp and (m.PrimaryPart.Position-hrp.Position).Magnitude or 0
+                if not bestD or d<bestD then bestId, bestM, bestD = id, m, d end
+            end
+        end
+    end
+    if bestId and bestM then lockOn({id=bestId, model=bestM}) end
+end
+
+local function unlock(_reason)
+    stopHitLoop()
+    cmbDetachStick()
+    locked = false
+    relockFromWorld()
+end
+
+-- ========== remote hooks ==========
+if SpawnBR then
+    SpawnBR.OnClientEvent:Connect(function(payload)
+        if not payload then return end
+        local m = payload.Model or payload.model
+        local id = payload.ID or payload.Id or (m and m:GetDebugId()) or ("id_"..tostring(math.random(1,1e6)))
+        if not m then return end
+        ACTIVE[id] = m
+        local r = cmbGetRarityModel(m)
+        if not locked and CMB_STATE.autoTP_enabled and preferredRarity and r and norm(r)==preferredRarity then
+            local sid, sm = pickSameRarity(preferredRarity)
+            if sid and sm then lockOn({id=sid, model=sm}) return end
+        end
+        if cmbIsAllowed(r) then enqueue(m, id) end
+    end)
+end
+if DeleteBR then
+    DeleteBR.OnClientEvent:Connect(function(id)
+        if id then ACTIVE[id] = nil end
+        if CURRENT.id and id == CURRENT.id then
+            local lastR = preferredRarity
+            stopHitLoop()
+            cmbDetachStick()
+            locked = false
+            clearCurrent()
+            if CMB_STATE.autoTP_enabled then
+                local sid, sm = pickSameRarity(lastR)
+                if sid and sm then lockOn({id=sid, model=sm}) end
+            end
+        end
+    end)
+end
+
+-- seed ACTIVE dari world (jaga2)
+task.spawn(function()
+    local sm = workspace:FindFirstChild("ScriptedMap", 15)
+    local br = sm and sm:FindFirstChild("Brainrots", 15)
+    if not br then return end
+    for _,m in ipairs(br:GetChildren()) do
+        if m:IsA("Model") then ACTIVE[m:GetAttribute("ID") or m.Name] = m end
+    end
+    br.ChildAdded:Connect(function(m)
+        if m:IsA("Model") then
+            ACTIVE[m:GetAttribute("ID") or m.Name] = m
+            local r = cmbGetRarityModel(m)
+            if not locked and CMB_STATE.autoTP_enabled and preferredRarity and r and norm(r)==preferredRarity then
+                local sid, sm = pickSameRarity(preferredRarity)
+                if sid and sm then lockOn({id=sid, model=sm}) end
+            end
+        end
+    end)
+    br.ChildRemoved:Connect(function(m)
+        local id = m:GetAttribute("ID") or m.Name
+        ACTIVE[id] = nil
+        if stick.model and m == stick.model then unlock("removed") end
+    end)
+end)
+
+-- watchdog
+RunService.Stepped:Connect(function()
+    if locked then
+        if not (stick.model and stick.model.Parent) then unlock("lost model") return end
+        local hasAP, hasAO = false, false
+        for _,o in ipairs(stick.cons) do
+            if typeof(o)=="Instance" and o.Parent then
+                if o:IsA("AlignPosition") then hasAP=true end
+                if o:IsA("AlignOrientation") then hasAO=true end
+            end
+        end
+        if (not hasAP) or (not hasAO) then cmbAttachStick(stick.model, stick.id) end
+    else
+        if CMB_STATE.autoTP_enabled then relockFromWorld() end
+    end
+end)
+
+-- ========== target pos untuk gear ==========
+local function chooseTargetPos()
+    local char = LP.Character or LP.CharacterAdded:Wait()
+    local hrp  = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return Vector3.zero end
+
+    local bestSame, bestSameDist
+    local bestAllowed, bestAllowedDist
+    local bestAny, bestAnyDist
+
+    for _,m in pairs(ACTIVE) do
+        if m and m.Parent and m.PrimaryPart then
+            local pos = m.PrimaryPart.Position
+            local d = (pos - hrp.Position).Magnitude
+            local r = cmbGetRarityModel(m); local rn = r and norm(r) or nil
+            if preferredRarity and rn == preferredRarity then
+                if not bestSameDist or d<bestSameDist then bestSame, bestSameDist = pos, d end
+            end
+            if r and cmbIsAllowed(r) then
+                if not bestAllowedDist or d<bestAllowedDist then bestAllowed, bestAllowedDist = pos, d end
+            end
+            if not bestAnyDist or d<bestAnyDist then bestAny, bestAnyDist = pos, d end
+        end
+    end
+    return bestSame or bestAllowed or bestAny or hrp.Position
+end
+
+-- ========== Gear registry ==========
+local REG = {
+    ["Frost Grenade"]   = { keys={"frost","gren"}, time=0.50, kind="pulse" },
+    ["Banana Gun"]      = { keys={"banana","gun"}, time=0.04, kind="pulse" },
+    ["Carrot Launcher"] = { keys={"carrot","launc"}, time=0.23, kind="pulse" },
+    ["Frost Blower"]    = { keys={"frost","blow"}, time=0.10, kind="toggle" },
+}
+local function returnGearByEntry(entry)
+    if not entry then return end
+    local t = findToolByPartials(entry.keys)
+    if t and t.Parent == (LP.Character or LP.CharacterAdded:Wait()) then moveToolToBackpack(t) end
+end
+local function returnAllKnownTools()
+    for _,entry in pairs(REG) do returnGearByEntry(entry) end
+end
+
+-- panggil UseItem aman
+local lastUseAt = 0
+local function safeUse(payload)
+    if os.clock() - lastUseAt < 0.06 then task.wait(0.06) end
+    lastUseAt = os.clock()
+    local ok = pcall(function() UseItemRemote:FireServer(payload) end)
+    if ok then return true end
+    ok = pcall(function() UseItemRemote:FireServer(unpack({payload})) end)
+    if ok then return true end
+    ok = pcall(function() local a={}; a[1]=payload; UseItemRemote:FireServer(table.unpack(a)) end)
+    return ok
+end
+
+-- ========== Toggle 2: Auto Hit Gear (single) ==========
+local gearFireToken = 0
+local function stopGearFireLoop() gearFireToken += 1 end
+local function startGearFireLoop()
+    gearFireToken += 1; local my = gearFireToken
+    task.spawn(function()
+        while CMB_STATE.gearFire_enabled and my == gearFireToken do
+            local entry = REG[CMB_STATE.gearChoice]
+            if entry then
+                local tool = findToolByPartials(entry.keys)
+                if tool and ensureEquippedExclusive(tool, 1.0) then
+                    local pos = chooseTargetPos()
+                    if entry.kind=="pulse" then
+                        safeUse({ Toggle=true, Time=entry.time, Tool=tool, Pos=pos })
+                        if CMB_STATE.gearChoice == "Frost Grenade" then
+                            local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+                            if hum then pcall(function() hum:UnequipTools() end) end
+                            cmbStashAllExcept(LP.Character, LP:FindFirstChild("Backpack"), nil)
+                        end
+                    else
+                        safeUse({ Tool=tool, Toggle=true })
+                    end
+                end
+            else
+                task.wait(0.2)
+            end
+            task.wait(0.10)
+        end
+        if CMB_STATE.gearChoice == "Frost Blower" then
+            local t = findToolByPartials(REG["Frost Blower"].keys)
+            if t then safeUse({ Tool=t, Toggle=false }) end
+        end
+    end)
+end
+
+-- ========== Toggle 3: Combo Gear (Frost×1 → Banana×4 → Carrot×2) ==========
+local comboToken = 0
+local function runComboCycle()
+    local char = LP.Character or LP.CharacterAdded:Wait()
+    local bp   = LP:FindFirstChild("Backpack")
+
+    -- Frost x1
+    do
+        local e = REG["Frost Grenade"]
+        local t = findToolByPartials(e.keys)
+        if t and ensureEquippedExclusive(t, 1.0) then
+            local pos = chooseTargetPos()
+            safeUse({ Toggle=true, Time=e.time, Tool=t, Pos=pos })
+            task.wait(0.12)
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then pcall(function() hum:UnequipTools() end) end
+            cmbStashAllExcept(char, bp, nil)
+            task.wait(0.03)
+        end
+    end
+
+    -- Banana x4
+    do
+        local e = REG["Banana Gun"]
+        local t = findToolByPartials(e.keys)
+        if t and ensureEquippedExclusive(t, 1.0) then
+            local pos = chooseTargetPos()
+            for i=1,4 do
+                safeUse({ Toggle=true, Time=e.time, Tool=t, Pos=pos })
+                task.wait(0.06)
+            end
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then pcall(function() hum:UnequipTools() end) end
+            cmbStashAllExcept(char, bp, nil)
+            task.wait(0.03)
+        end
+    end
+
+    -- Carrot x2
+    do
+        local e = REG["Carrot Launcher"]
+        local t = findToolByPartials(e.keys)
+        if t and ensureEquippedExclusive(t, 1.0) then
+            local pos = chooseTargetPos()
+            for i=1,2 do
+                safeUse({ Toggle=true, Time=e.time, Tool=t, Pos=pos })
+                task.wait(0.08)
+            end
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then pcall(function() hum:UnequipTools() end) end
+            cmbStashAllExcept(char, bp, nil)
+        end
+    end
+end
+
+-- ========== GUI: tabCombat ==========
+tabCombat:CreateSectionFold({ Title = "Rarity Filter (Shared)" })
+local cmbInit = {}
+for _,r in ipairs(ALL_RARITIES) do if CMB_STATE.allowedRarity[norm(r)] then cmbInit[#cmbInit+1]=r end end
+local ddR = tabCombat:Dropdown({
+    Name = "Allowed Rarity (multi)",
+    Options = ALL_RARITIES,
+    MultiSelection = true,
+    CurrentOption = cmbInit,
+    Placeholder = "All",
+    SummaryMaxItems = 3,
+    SummaryMaxChars = 26,
+    Callback = function(arr)
+        local set = {}
+        for _,v in ipairs(arr or {}) do set[norm(v)] = true end
+        CMB_STATE.allowedRarity = set
+    end
+})
+tabCombat:Button({
+    Name = "Preset: Godly + Secret (+Limited)",
+    Callback = function()
+        CMB_STATE.allowedRarity = { godly=true, secret=true, limited=true }
+        setDropdownSelection(ddR, {"Godly","Secret","Limited"})
+    end
+})
+tabCombat:Button({
+    Name = "Allow All",
+    Callback = function()
+        local all = {}
+        for _,r in ipairs(ALL_RARITIES) do all[norm(r)] = true end
+        CMB_STATE.allowedRarity = all
+        local tmpAll = {}
+        for i,v in ipairs(ALL_RARITIES) do tmpAll[i]=v end
+        setDropdownSelection(ddR, tmpAll)
+    end
+})
+tabCombat:Button({
+    Name = "Clear (No Filter)",
+    Callback = function()
+        CMB_STATE.allowedRarity = {}
+        setDropdownSelection(ddR, {})
+    end
+})
+
+-- Toggle 1: Auto TP+Hit
+tabCombat:CreateSectionFold({ Title = "Auto Hit (TP + Lock + Freeze)" })
+tabCombat:Toggle({
+    Name = "Enable Auto TP + Hit (Freeze On Lock)",
+    Default = (CMB_STATE.autoTP_enabled and CMB_STATE.lockFreeze and CMB_STATE.autoEquipBat) or false,
+    Callback = function(on)
+        CMB_STATE.autoTP_enabled = on
+        CMB_STATE.lockFreeze     = on
+        CMB_STATE.autoEquipBat   = on
+
+        if not on then
+            buf, bufScheduled = {}, false
+            if locked then unlock("disabled") end
+            stopHitLoop()
+            cmbUnfreeze()
+            local t = findToolByPartials(REG["Frost Blower"].keys)
+            if t then safeUse({ Tool=t, Toggle=false }) end
+            returnAllKnownTools()
+        else
+            task.defer(function() relockFromWorld() end)
+        end
+    end
+})
+
+-- Toggle 2: Auto Hit Gear (single) -- mutual exclusive dengan Combo
+tabCombat:CreateSectionFold({ Title = "Auto Hit Gear (Single)" })
+local gearList = { "Frost Grenade","Banana Gun","Carrot Launcher","Frost Blower" }
+local ddGear = tabCombat:Dropdown({
+    Name = "Gear",
+    Options = gearList,
+    MultiSelection = false,
+    CurrentOption = CMB_STATE.gearChoice,
+    Callback = function(v) CMB_STATE.gearChoice = type(v)=="table" and v[1] or v end
+})
+tabCombat:Toggle({
+    Name = "Enable Auto Hit Gear",
+    Default = CMB_STATE.gearFire_enabled,
+    Callback = function(on)
+        if on and CMB_STATE.combo_enabled then
+            CMB_STATE.combo_enabled = false
+            comboToken += 1 -- stop combo
+        end
+        CMB_STATE.gearFire_enabled = on
+        if on then
+            startGearFireLoop()
+        else
+            stopGearFireLoop()
+            local t = findToolByPartials(REG["Frost Blower"].keys)
+            if t then safeUse({ Tool=t, Toggle=false }) end
+            returnGearByEntry(REG[CMB_STATE.gearChoice])
+        end
+    end
+})
+
+-- Toggle 3: Combo Gear -- mutual exclusive dengan Single
+tabCombat:CreateSectionFold({ Title = "Combo Gear (Frost×1 → Banana×4 → Carrot×2)" })
+tabCombat:Paragraph("Loop tiap ~2 detik. Target prioritas: rarity sama (target terakhir) → allowed → terdekat.")
+tabCombat:Toggle({
+    Name = "Enable Combo",
+    Default = CMB_STATE.combo_enabled,
+    Callback = function(on)
+        if on and CMB_STATE.gearFire_enabled then
+            CMB_STATE.gearFire_enabled = false
+            stopGearFireLoop()
+        end
+        CMB_STATE.combo_enabled = on
+        if on then
+            comboToken += 1; local my = comboToken
+            task.spawn(function()
+                while my == comboToken and CMB_STATE.combo_enabled do
+                    local t0 = os.clock()
+                    runComboCycle()
+                    local dt = os.clock()-t0
+                    local rest = (CMB_STATE.comboPeriod or 2.0) - dt
+                    if rest > 0 then task.wait(rest) end
+                end
+            end)
+        else
+            comboToken += 1
+            returnGearByEntry(REG["Frost Grenade"])
+            returnGearByEntry(REG["Banana Gun"])
+            returnGearByEntry(REG["Carrot Launcher"])
+            local t = findToolByPartials(REG["Frost Blower"].keys)
+            if t then safeUse({ Tool=t, Toggle=false }) moveToolToBackpack(t) end
+        end
+    end
+})
+
+-- bootstrap kecil
+task.delay(0.25, function()
+    local sm = workspace:FindFirstChild("ScriptedMap")
+    local br = sm and sm:FindFirstChild("Brainrots")
+    if br then
+        for _, m in ipairs(br:GetChildren()) do
+            if m:IsA("Model") then ACTIVE[m:GetAttribute("ID") or m.Name] = m end
+        end
+    end
+    if CMB_STATE.autoTP_enabled then relockFromWorld() end
+end)
 
 -- =============================
 -- Planting
@@ -1485,715 +2197,3 @@ end
 local pf = (rawget(_G,"myPlayerFolder") and _G.myPlayerFolder()) or myPlayerFolderSafe()
 if pf then pf.ChildAdded:Connect(processNewContainer) end
 
--- =============================
--- COMBAT / COMBO (taruh di tabCombat)
--- =============================
-local function norm(s) return (tostring(s or "")):lower() end
-
--- Rarity & state
-local ALL_RARITIES = { "Rare","Epic","Mythic","Legendary","Limited","Secret","Godly" }
-local CMB_STATE = {
-    -- filter rarity bersama
-    allowedRarity = { godly=true, secret=true, limited=true },
-
-    -- Toggle 1: Auto TP + Hit
-    autoTP_enabled   = false,
-    yOffset          = 0,
-    stickYOffset     = 0,
-    lockFreeze       = true,
-    bufferDelay      = 0.12,
-    hitInterval      = 0.20,
-    autoEquipBat     = true,
-
-    -- Toggle 2: Auto Hit Gear (single)
-    gearFire_enabled = false,
-    gearChoice       = "Banana Gun", -- "Frost Grenade" | "Banana Gun" | "Carrot Launcher" | "Frost Blower"
-
-    -- Toggle 3: Combo Gear (loop)
-    combo_enabled    = false,
-    comboPeriod      = 2.0,
-}
-
--- ========== brainrot rarity (model) ==========
-local _brWarned = {}
-local function cmbGetBRName(model)
-    local keys = {"Brainrot","BrainRot","brainrot","Name","Title"}
-    for _,k in ipairs(keys) do
-        local v = model:GetAttribute(k)
-        if type(v)=="string" and #v>0 then return v end
-    end
-    return model.Name
-end
-local function cmbGetRarityModel(model)
-    if not Util or not Util.GetBrainrotEntry then return nil end
-    local nm = cmbGetBRName(model)
-    local ok, entry = pcall(Util.GetBrainrotEntry, Util, nm)
-    if ok and entry and entry.Rarity then return entry.Rarity end
-    if not _brWarned[nm] then _brWarned[nm]=true warn("[COMBO] Rarity not found:", nm) end
-    return nil
-end
-local function cmbIsAllowed(r)
-    if not r then return false end
-    r = norm(r)
-    return CMB_STATE.allowedRarity[r] == true
-end
-
--- ========== TP + stick ==========
-local HRP = (LP.Character or LP.CharacterAdded:Wait()):WaitForChild("HumanoidRootPart", 15)
-local Hum = (LP.Character or LP.CharacterAdded:Wait()):WaitForChild("Humanoid", 15)
-LP.CharacterAdded:Connect(function(ch)
-    task.defer(function()
-        HRP = ch:WaitForChild("HumanoidRootPart", 15)
-        Hum = ch:WaitForChild("Humanoid", 15)
-    end)
-end)
-
-local stick = { cons = {}, model=nil, id=nil }
-local DEFAULT_WALKSPEED, DEFAULT_JUMPPOWER, DEFAULT_JUMPHEIGHT = 16, 50, 7.2
-local function cmbUnfreeze()
-    if not Hum then return end
-    Hum.AutoRotate = true
-    Hum.PlatformStand = false
-    if Hum.UseJumpPower ~= nil then Hum.JumpPower = DEFAULT_JUMPPOWER else pcall(function() Hum.JumpHeight = DEFAULT_JUMPHEIGHT end) end
-    Hum.WalkSpeed = DEFAULT_WALKSPEED
-end
-local function cmbFreeze()
-    if not Hum then return end
-    Hum.AutoRotate = false
-    if CMB_STATE.lockFreeze then
-        if Hum.UseJumpPower ~= nil then Hum.JumpPower = 0 end
-        Hum.WalkSpeed = 0
-        Hum.PlatformStand = false
-    end
-end
-local function cmbDetachStick()
-    for _,o in ipairs(stick.cons) do
-        if typeof(o)=="Instance" and o.Destroy then pcall(function() o:Destroy() end) end
-    end
-    stick.cons, stick.model, stick.id = {}, nil, nil
-    cmbUnfreeze()
-end
-local function cmbWaitModelReady(m, t)
-    t = t or 5; local t0 = os.clock()
-    while os.clock()-t0 < t do
-        if m and m.Parent and m:IsDescendantOf(workspace) then
-            local ok = pcall(m.GetBoundingBox, m); if ok then return true end
-        end
-        task.wait(0.05)
-    end
-    return false
-end
-local function cmbTPAbove(m)
-    if not (m and HRP) then return end
-    if not cmbWaitModelReady(m, 5) then return end
-    local ok, cf, size = pcall(m.GetBoundingBox, m); if not ok then return end
-    local top = cf.Position + Vector3.new(0, size.Y + (CMB_STATE.yOffset or 0), 0)
-    HRP.AssemblyLinearVelocity = Vector3.zero
-    local cam = workspace.CurrentCamera
-    local look = cam and cam.CFrame.LookVector or Vector3.new(0,0,-1)
-    HRP.CFrame = CFrame.new(top, top + look)
-end
-local function cmbAttachStick(m, id)
-    cmbDetachStick()
-    if not (HRP and m and m.PrimaryPart) then return end
-
-    local a0 = HRP:FindFirstChild("CMB_Att0") or Instance.new("Attachment")
-    a0.Name, a0.Parent = "CMB_Att0", HRP
-
-    local a1 = m.PrimaryPart:FindFirstChild("CMB_Att1") or Instance.new("Attachment")
-    a1.Name, a1.Parent = "CMB_Att1", m.PrimaryPart
-    a1.Position = Vector3.new(0, (CMB_STATE.stickYOffset or 0), 0)
-
-    local ap = Instance.new("AlignPosition")
-    ap.Attachment0, ap.Attachment1 = a0, a1
-    ap.RigidityEnabled = true
-    ap.MaxForce = math.huge
-    ap.Responsiveness = 300
-    ap.ApplyAtCenterOfMass = true
-    ap.Parent = HRP
-
-    local ao = Instance.new("AlignOrientation")
-    ao.Attachment0, ao.Attachment1 = a0, a1
-    ao.RigidityEnabled = true
-    ao.MaxTorque = math.huge
-    ao.Responsiveness = 300
-    ao.Parent = HRP
-
-    stick.cons, stick.model, stick.id = {a0,a1,ap,ao}, m, id
-    cmbFreeze()
-end
-
--- ========== tool helpers ==========
-local function moveToolToBackpack(tool)
-    if not (tool and tool:IsA("Tool")) then return end
-    local bp = LP:FindFirstChild("Backpack")
-    if bp and tool.Parent ~= bp then pcall(function() tool.Parent = bp end) end
-end
-local function findToolByPartials(partials)
-    local char, bp = LP.Character, LP:FindFirstChild("Backpack")
-    local function match(t)
-        local n = norm(t.Name)
-        for _,key in ipairs(partials) do if not n:find(key,1,true) then return false end end
-        return true
-    end
-    if char then for _,t in ipairs(char:GetChildren()) do if t:IsA("Tool") and match(t) then return t,"Character" end end end
-    if bp   then for _,t in ipairs(bp:GetChildren())   do if t:IsA("Tool") and match(t) then return t,"Backpack"  end end end
-    return nil
-end
-local function ensureBlowerOff()
-    local t = findToolByPartials({"frost","blow"})
-    if t then pcall(function() UseItemRemote:FireServer({ Tool = t, Toggle = false }) end) end
-end
--- EXCLUSIVE equip aman register
-local function cmbStashAllExcept(char, bp, keep)
-    if not char or not bp then return end
-    for _,t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") and t ~= keep then pcall(function() t.Parent = bp end) end
-    end
-end
-local function ensureEquippedExclusive(tool, timeout)
-    if not tool then return false end
-    local char = LP.Character or LP.CharacterAdded:Wait()
-    local bp   = LP:FindFirstChild("Backpack")
-    ensureBlowerOff()
-    cmbStashAllExcept(char, bp, tool)
-
-    if tool.Parent ~= char then
-        if EquipItemRemote then
-            pcall(function() EquipItemRemote:FireServer(tool) end)
-            pcall(function() EquipItemRemote:FireServer(tool.Name) end)
-        end
-        if tool.Parent ~= char and tool.Parent ~= nil then pcall(function() tool.Parent = char end) end
-    end
-
-    local t0, lim = os.clock(), (timeout or 1.0)
-    while os.clock()-t0 < lim do
-        local onlyThis = (tool.Parent == char)
-        if onlyThis then
-            for _,t in ipairs(char:GetChildren()) do
-                if t:IsA("Tool") and t ~= tool then onlyThis=false break end
-            end
-        end
-        if onlyThis then return true end
-        cmbStashAllExcept(char, bp, tool)
-        task.wait(0.05)
-    end
-    return (tool.Parent == char)
-end
-
--- ========== auto-equip bat + hit ==========
-local function findBatInBackpack()
-    local bp = LP:FindFirstChild("Backpack")
-    if not bp then return nil end
-    for _,tool in ipairs(bp:GetChildren()) do
-        if tool:IsA("Tool") and norm(tool.Name):find("bat") then return tool end
-    end
-    return nil
-end
-local function cmbEquipBat()
-    if not CMB_STATE.autoEquipBat then return end
-    local tool = findBatInBackpack(); if not tool then return end
-    if EquipItemRemote then
-        local ok = pcall(function() EquipItemRemote:FireServer(tool) end)
-        if not ok then pcall(function() EquipItemRemote:FireServer(tool.Name) end) end
-    end
-    local char = LP.Character
-    if char and tool.Parent == LP.Backpack then pcall(function() tool.Parent = char end) end
-end
-
-local hitToken = 0
-local function cmbVisualHit(model)
-    if not (model and model.PrimaryPart) then return end
-    local att = Instance.new("Attachment", model.PrimaryPart)
-    local pe = Instance.new("ParticleEmitter")
-    pe.Rate = 0; pe.Lifetime = NumberRange.new(0.2,0.35)
-    pe.Speed = NumberRange.new(6,10); pe.SpreadAngle = Vector2.new(60,60)
-    pe.Texture = "rbxassetid://243660364"
-    pe.Parent = att; pe:Emit(14)
-    Debris:AddItem(att,1)
-end
-local function startHitLoop()
-    if not WeaponAttack then return end
-    hitToken += 1; local my = hitToken
-    task.spawn(function()
-        while my == hitToken do
-            if stick.model and stick.model.Parent then
-                local id = stick.id or stick.model:GetAttribute("ID") or stick.model.Name
-                pcall(function() WeaponAttack:FireServer({ tostring(id) }) end)
-                cmbVisualHit(stick.model)
-            end
-            task.wait(CMB_STATE.hitInterval or 0.2)
-        end
-    end)
-end
-local function stopHitLoop() hitToken += 1 end
-
--- ========== active & selection ==========
-local ACTIVE = {}  -- [id] = model
-local CURRENT = { id=nil, model=nil, rarity=nil }
-local preferredRarity = nil
-local locked = false
-local buf, bufScheduled = {}, false
-local handled = {}
-
-local function setCurrent(id, m)
-    CURRENT.id, CURRENT.model = id, m
-    local r = cmbGetRarityModel(m)
-    CURRENT.rarity = r and norm(r) or nil
-    preferredRarity = CURRENT.rarity
-end
-local function clearCurrent() CURRENT.id, CURRENT.model, CURRENT.rarity = nil,nil,nil end
-local function markHandled(id) handled[id] = true end
-local function isHandled(id) return handled[id]==true end
-
-local function pickSameRarity(rWanted)
-    if not rWanted then return nil,nil end
-    local char = LP.Character; local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local bestId, bestModel, bestDist = nil,nil,math.huge
-    for id,m in pairs(ACTIVE) do
-        if m and m.Parent and m.PrimaryPart then
-            local r = cmbGetRarityModel(m)
-            if r and norm(r)==rWanted then
-                local d = hrp and (m.PrimaryPart.Position-hrp.Position).Magnitude or 0
-                if d < bestDist then bestId, bestModel, bestDist = id, m, d end
-            end
-        end
-    end
-    return bestId, bestModel
-end
-
-local function chooseBestFromBuf()
-    local cam = workspace.CurrentCamera
-    local best, bestRank, bestDist = nil, -1, 1e9
-    for _,it in ipairs(buf) do
-        local m = it.model
-        if m and m.Parent then
-            local r = cmbGetRarityModel(m)
-            if cmbIsAllowed(r) then
-                local rank = ({rare=1, epic=2, mythic=3, legendary=4, limited=4, secret=5, godly=6})[norm(r)] or 0
-                local dist = 1e9
-                local ok, cf = pcall(m.GetBoundingBox, m)
-                if ok and cam then dist = (cf.Position - cam.CFrame.Position).Magnitude end
-                if rank > bestRank or (rank==bestRank and dist<bestDist) then best, bestRank, bestDist = it, rank, dist end
-            end
-        end
-    end
-    return best
-end
-
-local function lockOn(pick)
-    cmbEquipBat()
-    cmbTPAbove(pick.model)
-    cmbAttachStick(pick.model, pick.id)
-    setCurrent(pick.id, pick.model)
-    locked = true
-    startHitLoop()
-end
-
-local function processBuf()
-    bufScheduled = false
-    if locked or not CMB_STATE.autoTP_enabled or #buf==0 then buf = {}; return end
-    local pick = chooseBestFromBuf(); buf = {}
-    if not pick or not pick.model or not pick.model.Parent then return end
-    task.defer(function() lockOn(pick) end)
-end
-
-local function enqueue(m, id)
-    if isHandled(id) or locked or not CMB_STATE.autoTP_enabled then return end
-    markHandled(id)
-    table.insert(buf, {model=m, id=id})
-    if not bufScheduled then
-        bufScheduled = true
-        task.delay(CMB_STATE.bufferDelay or 0.12, processBuf)
-    end
-end
-
-local function relockFromWorld()
-    if locked or not CMB_STATE.autoTP_enabled then return end
-    local sid, sm = pickSameRarity(preferredRarity)
-    if sid and sm then lockOn({id=sid, model=sm}) return end
-    local char = LP.Character; local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local bestId, bestM, bestD
-    for id,m in pairs(ACTIVE) do
-        if m and m.Parent and m.PrimaryPart then
-            local r = cmbGetRarityModel(m)
-            if cmbIsAllowed(r) then
-                local d = hrp and (m.PrimaryPart.Position-hrp.Position).Magnitude or 0
-                if not bestD or d<bestD then bestId, bestM, bestD = id, m, d end
-            end
-        end
-    end
-    if bestId and bestM then lockOn({id=bestId, model=bestM}) end
-end
-
-local function unlock(_reason)
-    stopHitLoop()
-    cmbDetachStick()
-    locked = false
-    relockFromWorld()
-end
-
--- ========== remote hooks ==========
-if SpawnBR then
-    SpawnBR.OnClientEvent:Connect(function(payload)
-        if not payload then return end
-        local m = payload.Model or payload.model
-        local id = payload.ID or payload.Id or (m and m:GetDebugId()) or ("id_"..tostring(math.random(1,1e6)))
-        if not m then return end
-        ACTIVE[id] = m
-        local r = cmbGetRarityModel(m)
-        if not locked and CMB_STATE.autoTP_enabled and preferredRarity and r and norm(r)==preferredRarity then
-            local sid, sm = pickSameRarity(preferredRarity)
-            if sid and sm then lockOn({id=sid, model=sm}) return end
-        end
-        if cmbIsAllowed(r) then enqueue(m, id) end
-    end)
-end
-if DeleteBR then
-    DeleteBR.OnClientEvent:Connect(function(id)
-        if id then ACTIVE[id] = nil end
-        if CURRENT.id and id == CURRENT.id then
-            local lastR = preferredRarity
-            stopHitLoop()
-            cmbDetachStick()
-            locked = false
-            clearCurrent()
-            if CMB_STATE.autoTP_enabled then
-                local sid, sm = pickSameRarity(lastR)
-                if sid and sm then lockOn({id=sid, model=sm}) end
-            end
-        end
-    end)
-end
-
--- seed ACTIVE dari world (jaga2)
-task.spawn(function()
-    local sm = workspace:FindFirstChild("ScriptedMap", 15)
-    local br = sm and sm:FindFirstChild("Brainrots", 15)
-    if not br then return end
-    for _,m in ipairs(br:GetChildren()) do
-        if m:IsA("Model") then ACTIVE[m:GetAttribute("ID") or m.Name] = m end
-    end
-    br.ChildAdded:Connect(function(m)
-        if m:IsA("Model") then
-            ACTIVE[m:GetAttribute("ID") or m.Name] = m
-            local r = cmbGetRarityModel(m)
-            if not locked and CMB_STATE.autoTP_enabled and preferredRarity and r and norm(r)==preferredRarity then
-                local sid, sm = pickSameRarity(preferredRarity)
-                if sid and sm then lockOn({id=sid, model=sm}) end
-            end
-        end
-    end)
-    br.ChildRemoved:Connect(function(m)
-        local id = m:GetAttribute("ID") or m.Name
-        ACTIVE[id] = nil
-        if stick.model and m == stick.model then unlock("removed") end
-    end)
-end)
-
--- watchdog
-RunService.Stepped:Connect(function()
-    if locked then
-        if not (stick.model and stick.model.Parent) then unlock("lost model") return end
-        local hasAP, hasAO = false, false
-        for _,o in ipairs(stick.cons) do
-            if typeof(o)=="Instance" and o.Parent then
-                if o:IsA("AlignPosition") then hasAP=true end
-                if o:IsA("AlignOrientation") then hasAO=true end
-            end
-        end
-        if (not hasAP) or (not hasAO) then cmbAttachStick(stick.model, stick.id) end
-    else
-        if CMB_STATE.autoTP_enabled then relockFromWorld() end
-    end
-end)
-
--- ========== target pos untuk gear ==========
-local function chooseTargetPos()
-    local char = LP.Character or LP.CharacterAdded:Wait()
-    local hrp  = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return Vector3.zero end
-
-    local bestSame, bestSameDist
-    local bestAllowed, bestAllowedDist
-    local bestAny, bestAnyDist
-
-    for _,m in pairs(ACTIVE) do
-        if m and m.Parent and m.PrimaryPart then
-            local pos = m.PrimaryPart.Position
-            local d = (pos - hrp.Position).Magnitude
-            local r = cmbGetRarityModel(m); local rn = r and norm(r) or nil
-            if preferredRarity and rn == preferredRarity then
-                if not bestSameDist or d<bestSameDist then bestSame, bestSameDist = pos, d end
-            end
-            if r and cmbIsAllowed(r) then
-                if not bestAllowedDist or d<bestAllowedDist then bestAllowed, bestAllowedDist = pos, d end
-            end
-            if not bestAnyDist or d<bestAnyDist then bestAny, bestAnyDist = pos, d end
-        end
-    end
-    return bestSame or bestAllowed or bestAny or hrp.Position
-end
-
--- ========== Gear registry ==========
-local REG = {
-    ["Frost Grenade"]   = { keys={"frost","gren"}, time=0.50, kind="pulse" },
-    ["Banana Gun"]      = { keys={"banana","gun"}, time=0.04, kind="pulse" },
-    ["Carrot Launcher"] = { keys={"carrot","launc"}, time=0.23, kind="pulse" },
-    ["Frost Blower"]    = { keys={"frost","blow"}, time=0.10, kind="toggle" },
-}
-local function returnGearByEntry(entry)
-    if not entry then return end
-    local t = findToolByPartials(entry.keys)
-    if t and t.Parent == (LP.Character or LP.CharacterAdded:Wait()) then moveToolToBackpack(t) end
-end
-local function returnAllKnownTools()
-    for _,entry in pairs(REG) do returnGearByEntry(entry) end
-end
-
--- panggil UseItem aman
-local lastUseAt = 0
-local function safeUse(payload)
-    if os.clock() - lastUseAt < 0.06 then task.wait(0.06) end
-    lastUseAt = os.clock()
-    local ok = pcall(function() UseItemRemote:FireServer(payload) end)
-    if ok then return true end
-    ok = pcall(function() UseItemRemote:FireServer(unpack({payload})) end)
-    if ok then return true end
-    ok = pcall(function() local a={}; a[1]=payload; UseItemRemote:FireServer(table.unpack(a)) end)
-    return ok
-end
-
--- ========== Toggle 2: Auto Hit Gear (single) ==========
-local gearFireToken = 0
-local function stopGearFireLoop() gearFireToken += 1 end
-local function startGearFireLoop()
-    gearFireToken += 1; local my = gearFireToken
-    task.spawn(function()
-        while CMB_STATE.gearFire_enabled and my == gearFireToken do
-            local entry = REG[CMB_STATE.gearChoice]
-            if entry then
-                local tool = findToolByPartials(entry.keys)
-                if tool and ensureEquippedExclusive(tool, 1.0) then
-                    local pos = chooseTargetPos()
-                    if entry.kind=="pulse" then
-                        safeUse({ Toggle=true, Time=entry.time, Tool=tool, Pos=pos })
-                        if CMB_STATE.gearChoice == "Frost Grenade" then
-                            local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-                            if hum then pcall(function() hum:UnequipTools() end) end
-                            cmbStashAllExcept(LP.Character, LP:FindFirstChild("Backpack"), nil)
-                        end
-                    else
-                        safeUse({ Tool=tool, Toggle=true })
-                    end
-                end
-            else
-                task.wait(0.2)
-            end
-            task.wait(0.10)
-        end
-        if CMB_STATE.gearChoice == "Frost Blower" then
-            local t = findToolByPartials(REG["Frost Blower"].keys)
-            if t then safeUse({ Tool=t, Toggle=false }) end
-        end
-    end)
-end
-
--- ========== Toggle 3: Combo Gear (Frost×1 → Banana×4 → Carrot×2) ==========
-local comboToken = 0
-local function runComboCycle()
-    local char = LP.Character or LP.CharacterAdded:Wait()
-    local bp   = LP:FindFirstChild("Backpack")
-
-    -- Frost x1
-    do
-        local e = REG["Frost Grenade"]
-        local t = findToolByPartials(e.keys)
-        if t and ensureEquippedExclusive(t, 1.0) then
-            local pos = chooseTargetPos()
-            safeUse({ Toggle=true, Time=e.time, Tool=t, Pos=pos })
-            task.wait(0.12)
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hum then pcall(function() hum:UnequipTools() end) end
-            cmbStashAllExcept(char, bp, nil)
-            task.wait(0.03)
-        end
-    end
-
-    -- Banana x4
-    do
-        local e = REG["Banana Gun"]
-        local t = findToolByPartials(e.keys)
-        if t and ensureEquippedExclusive(t, 1.0) then
-            local pos = chooseTargetPos()
-            for i=1,4 do
-                safeUse({ Toggle=true, Time=e.time, Tool=t, Pos=pos })
-                task.wait(0.06)
-            end
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hum then pcall(function() hum:UnequipTools() end) end
-            cmbStashAllExcept(char, bp, nil)
-            task.wait(0.03)
-        end
-    end
-
-    -- Carrot x2
-    do
-        local e = REG["Carrot Launcher"]
-        local t = findToolByPartials(e.keys)
-        if t and ensureEquippedExclusive(t, 1.0) then
-            local pos = chooseTargetPos()
-            for i=1,2 do
-                safeUse({ Toggle=true, Time=e.time, Tool=t, Pos=pos })
-                task.wait(0.08)
-            end
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hum then pcall(function() hum:UnequipTools() end) end
-            cmbStashAllExcept(char, bp, nil)
-        end
-    end
-end
-
--- ========== GUI: tabCombat ==========
-tabCombat:CreateSectionFold({ Title = "Rarity Filter (Shared)" })
-local cmbInit = {}
-for _,r in ipairs(ALL_RARITIES) do if CMB_STATE.allowedRarity[norm(r)] then cmbInit[#cmbInit+1]=r end end
-local ddR = tabCombat:Dropdown({
-    Name = "Allowed Rarity (multi)",
-    Options = ALL_RARITIES,
-    MultiSelection = true,
-    CurrentOption = cmbInit,
-    Placeholder = "All",
-    SummaryMaxItems = 3,
-    SummaryMaxChars = 26,
-    Callback = function(arr)
-        local set = {}
-        for _,v in ipairs(arr or {}) do set[norm(v)] = true end
-        CMB_STATE.allowedRarity = set
-    end
-})
-tabCombat:Button({
-    Name = "Preset: Godly + Secret (+Limited)",
-    Callback = function()
-        CMB_STATE.allowedRarity = { godly=true, secret=true, limited=true }
-        setDropdownSelection(ddR, {"Godly","Secret","Limited"})
-    end
-})
-tabCombat:Button({
-    Name = "Allow All",
-    Callback = function()
-        local all = {}
-        for _,r in ipairs(ALL_RARITIES) do all[norm(r)] = true end
-        CMB_STATE.allowedRarity = all
-        local tmpAll = {}
-        for i,v in ipairs(ALL_RARITIES) do tmpAll[i]=v end
-        setDropdownSelection(ddR, tmpAll)
-    end
-})
-tabCombat:Button({
-    Name = "Clear (No Filter)",
-    Callback = function()
-        CMB_STATE.allowedRarity = {}
-        setDropdownSelection(ddR, {})
-    end
-})
-
--- Toggle 1: Auto TP+Hit
-tabCombat:CreateSectionFold({ Title = "Auto Hit (TP + Lock + Freeze)" })
-tabCombat:Toggle({
-    Name = "Enable Auto TP + Hit (Freeze On Lock)",
-    Default = (CMB_STATE.autoTP_enabled and CMB_STATE.lockFreeze and CMB_STATE.autoEquipBat) or false,
-    Callback = function(on)
-        CMB_STATE.autoTP_enabled = on
-        CMB_STATE.lockFreeze     = on
-        CMB_STATE.autoEquipBat   = on
-
-        if not on then
-            buf, bufScheduled = {}, false
-            if locked then unlock("disabled") end
-            stopHitLoop()
-            cmbUnfreeze()
-            local t = findToolByPartials(REG["Frost Blower"].keys)
-            if t then safeUse({ Tool=t, Toggle=false }) end
-            returnAllKnownTools()
-        else
-            task.defer(function() relockFromWorld() end)
-        end
-    end
-})
-
--- Toggle 2: Auto Hit Gear (single) -- mutual exclusive dengan Combo
-tabCombat:CreateSectionFold({ Title = "Auto Hit Gear (Single)" })
-local gearList = { "Frost Grenade","Banana Gun","Carrot Launcher","Frost Blower" }
-local ddGear = tabCombat:Dropdown({
-    Name = "Gear",
-    Options = gearList,
-    MultiSelection = false,
-    CurrentOption = CMB_STATE.gearChoice,
-    Callback = function(v) CMB_STATE.gearChoice = type(v)=="table" and v[1] or v end
-})
-tabCombat:Toggle({
-    Name = "Enable Auto Hit Gear",
-    Default = CMB_STATE.gearFire_enabled,
-    Callback = function(on)
-        if on and CMB_STATE.combo_enabled then
-            CMB_STATE.combo_enabled = false
-            comboToken += 1 -- stop combo
-        end
-        CMB_STATE.gearFire_enabled = on
-        if on then
-            startGearFireLoop()
-        else
-            stopGearFireLoop()
-            local t = findToolByPartials(REG["Frost Blower"].keys)
-            if t then safeUse({ Tool=t, Toggle=false }) end
-            returnGearByEntry(REG[CMB_STATE.gearChoice])
-        end
-    end
-})
-
--- Toggle 3: Combo Gear -- mutual exclusive dengan Single
-tabCombat:CreateSectionFold({ Title = "Combo Gear (Frost×1 → Banana×4 → Carrot×2)" })
-tabCombat:Paragraph("Loop tiap ~2 detik. Target prioritas: rarity sama (target terakhir) → allowed → terdekat.")
-tabCombat:Toggle({
-    Name = "Enable Combo",
-    Default = CMB_STATE.combo_enabled,
-    Callback = function(on)
-        if on and CMB_STATE.gearFire_enabled then
-            CMB_STATE.gearFire_enabled = false
-            stopGearFireLoop()
-        end
-        CMB_STATE.combo_enabled = on
-        if on then
-            comboToken += 1; local my = comboToken
-            task.spawn(function()
-                while my == comboToken and CMB_STATE.combo_enabled do
-                    local t0 = os.clock()
-                    runComboCycle()
-                    local dt = os.clock()-t0
-                    local rest = (CMB_STATE.comboPeriod or 2.0) - dt
-                    if rest > 0 then task.wait(rest) end
-                end
-            end)
-        else
-            comboToken += 1
-            returnGearByEntry(REG["Frost Grenade"])
-            returnGearByEntry(REG["Banana Gun"])
-            returnGearByEntry(REG["Carrot Launcher"])
-            local t = findToolByPartials(REG["Frost Blower"].keys)
-            if t then safeUse({ Tool=t, Toggle=false }) moveToolToBackpack(t) end
-        end
-    end
-})
-
--- bootstrap kecil
-task.delay(0.25, function()
-    local sm = workspace:FindFirstChild("ScriptedMap")
-    local br = sm and sm:FindFirstChild("Brainrots")
-    if br then
-        for _, m in ipairs(br:GetChildren()) do
-            if m:IsA("Model") then ACTIVE[m:GetAttribute("ID") or m.Name] = m end
-        end
-    end
-    if CMB_STATE.autoTP_enabled then relockFromWorld() end
-end)
