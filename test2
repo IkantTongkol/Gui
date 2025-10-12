@@ -318,15 +318,53 @@ createTab = function(self, opt)
     local function attach(i) ord+=1; i.LayoutOrder=ord; i.Parent=body; resize(); return i end
 
     function F:Paragraph(txt)
+      -- wrapper paragraf yang bisa di-Set ulang
       local wrap = New("Frame", {BackgroundTransparency=1, AutomaticSize=Enum.AutomaticSize.Y, Size=UDim2.new(1,0,0,0)})
-      New("TextLabel", {BackgroundTransparency=1, Text=tostring(txt or ""), TextWrapped=true, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, Font=Enum.Font.Gotham, TextSize=13, TextColor3=T.textMuted, AutomaticSize=Enum.AutomaticSize.Y, Size=UDim2.new(1,-6,0,0), Position=UDim2.new(0,3,0,0)}, wrap)
-      return attach(wrap)
+      local tl = New("TextLabel", {
+        BackgroundTransparency=1,
+        Text = tostring(txt or ""),
+        TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        Font = Enum.Font.Gotham,
+        TextSize = 13,
+        TextColor3 = T.textMuted,
+        AutomaticSize = Enum.AutomaticSize.Y,
+        Size = UDim2.new(1,-6,0,0),
+        Position = UDim2.new(0,3,0,0)
+      }, wrap)
+
+      attach(wrap)
+
+      return {
+        Set      = function(_, s) tl.Text = tostring(s or "") end,
+        Get      = function() return tl.Text end,
+        Object   = wrap,
+        TextLabel= tl,
+      }
     end
 
     function F:Label(txt)
-      local r = New("Frame", {Size=UDim2.new(1,0,0,34), BackgroundTransparency=1})
-      New("TextLabel", {BackgroundTransparency=1, Text=tostring(txt or ""), Size=UDim2.new(1,0,1,0), TextXAlignment=Enum.TextXAlignment.Left, Font=Enum.Font.Gotham, TextSize=14, TextColor3=T.text}, r)
-      return attach(r)
+      -- LABEL dengan API Set/Get agar mudah di-update
+      local row = New("Frame", {Size = UDim2.new(1,0,0,34), BackgroundTransparency = 1})
+      local tl = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Text = tostring(txt or ""),
+        Size = UDim2.new(1,0,1,0),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Font = Enum.Font.Gotham,
+        TextSize = 14,
+        TextColor3 = T.text
+      }, row)
+
+      attach(row)
+
+      return {
+        Set       = function(_, s) tl.Text = tostring(s or "") end,
+        Get       = function() return tl.Text end,
+        Object    = row,
+        TextLabel = tl,
+      }
     end
 
     function F:Divider() local d=New("Frame",{Size=UDim2.new(1,0,0,1), BackgroundColor3=T.stroke}); d.BackgroundTransparency=0.5; return attach(d) end
